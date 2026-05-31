@@ -7,8 +7,7 @@ app.use(express.json());
 
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const SHEET_ID       = process.env.SHEET_ID;
-const ANTHROPIC_KEY  = process.env.ANTHROPIC_KEY || '';
-
+const CALENDAR_ID    = process.env.CALENDAR_ID;
 const GOOGLE_CREDENTIALS = process.env.GOOGLE_CREDENTIALS
   ? JSON.parse(process.env.GOOGLE_CREDENTIALS)
   : null;
@@ -21,9 +20,13 @@ const CATEGORIAS_ENTRADA = [
   'Salário Jakson', 'Salário Dany', 'Freelance Jakson',
   'Freelance Dany', 'Rendimento', 'Presente', 'Outras entradas'
 ];
+const FORMAS_PAGAMENTO = ['pix', 'debito', 'crédito', 'credito', 'dinheiro', 'ted', 'doc'];
+const MESES = {
+  'janeiro':1,'fevereiro':2,'março':3,'abril':4,'maio':5,'junho':6,
+  'julho':7,'agosto':8,'setembro':9,'outubro':10,'novembro':11,'dezembro':12
+};
 
-// Armazena confirmações pendentes de duplicata
-// { chatId: { dados, tipo, resolve } }
+// Confirmações pendentes
 const pendentes = {};
 
 // ============================================================
@@ -31,11 +34,8 @@ const pendentes = {};
 // ============================================================
 app.post('/webhook', async (req, res) => {
   res.sendStatus(200);
-  try {
-    await handleUpdate(req.body);
-  } catch (err) {
-    console.error('Erro no webhook:', err);
-  }
+  try { await handleUpdate(req.body); }
+  catch (err) { console.error('Erro webhook:', err); }
 });
 
 app.get('/', (req, res) => res.send('Bot Financeiro Casa rodando!'));
@@ -47,6 +47,12 @@ async function handleUpdate(update) {
   const message = update.message || update.edited_message;
   if (!message) return;
 
+  // Callback de botões inline
+  if (update.callback_query) {
+    await handleCallback(update.callback_query);
+    return;
+  }
+
   const chatId    = message.chat.id;
   const username  = message.from.username || message.from.first_name || 'desconhecido';
   const text      = message.text || '';
@@ -54,80 +60,288 @@ async function handleUpdate(update) {
 
   // Foto
   if (message.photo && message.photo.length > 0) {
-    await handlePhoto(chatId, message.photo, message.caption || '', username);
+    await handleSemIA(chatId, message.caption || '', username);
     return;
   }
 
-  // Verifica se há confirmação de duplicata pendente
+  // Confirmação de duplicata pendente
   if (pendentes[chatId]) {
-    await handleConfirmacaoDuplicata(chatId, textLower);
+    await handleConfirmacao(chatId, textLower);
     return;
   }
 
-  if (textLower.startsWith('/gasto')    || textLower.startsWith('gasto'))      { await handleLancamento(chatId, text, username, 'Saída'); return; }
-  if (textLower.startsWith('/entrada')  || textLower.startsWith('entrada'))    { await handleLancamento(chatId, text, username, 'Entrada'); return; }
-  if (textLower.startsWith('/apagar')   || textLower.startsWith('apagar'))     { await handleApagar(chatId, text, username); return; }
-  if (textLower.startsWith('/editar')   || textLower.startsWith('editar'))     { await handleEditar(chatId, text, username); return; }
-  if (textLower.startsWith('/excluir')  || textLower.startsWith('excluir'))    { await handleExcluir(chatId, text); return; }
-  if (textLower.startsWith('/resumo')   || textLower.startsWith('resumo'))     { await handleResumo(chatId); return; }
-  if (textLower.startsWith('/ultimos')  || textLower.startsWith('ultimos'))    { await handleUltimos(chatId); return; }
-  if (textLower.startsWith('/categorias') || textLower.startsWith('categorias')) { await handleCategorias(chatId); return; }
-  if (textLower.startsWith('/ajuda')    || textLower.startsWith('ajuda') || textLower === '/start') { await handleAjuda(chatId); return; }
+  if (textLower.startsWith('/gasto')     || textLower.startsWith('gasto'))      { await handleLancamento(chatId, text, username, 'Saída'); return; }
+  if (textLower.startsWith('/entrada')   || textLower.startsWith('entrada'))    { await handleLancamento(chatId, text, username, 'Entrada'); return; }
+  if (textLower.startsWith('/apagar')    || textLower.startsWith('apagar'))     { await handleApagar(chatId, text, username); return; }
+  if (textLower.startsWith('/editar')    || textLower.startsWith('editar'))     { await handleEditar(chatId, text, username); return; }
+  if (textLower.startsWith('/excluir')   || textLower.startsWith('excluir'))    { await handleExcluir(chatId, text); return; }
+  if (textLower.startsWith('/resumo')    || textLower.startsWith('resumo'))     { await handleResumo(chatId); return; }
+  if (textLower.startsWith('/ultimos')   || textLower.startsWith('ultimos'))    { await handleUltimos(chatId); return; }
+  if (textLower.startsWith('/categorias')|| textLower.startsWith('categorias')) { await handleCategorias(chatId); return; }
+  if (textLower.startsWith('/menu')      || textLower.startsWith('menu') ||
+      textLower.startsWith('/ajuda')     || textLower.startsWith('ajuda') ||
+      textLower === '/start')                                                    { await handleMenu(chatId); return; }
 }
 
 // ============================================================
-//  HANDLER — lançamento (gasto ou entrada)
+//  CALLBACK DE BOTÕES
+// ============================================================
+async function handleCallback(query) {
+  const chatId = query.message.chat.id;
+  const data   = query.data;
+
+  await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/answerCallbackQuery`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ callback_query_id: query.id })
+  });
+
+  switch(data) {
+    case 'como_gasto':
+      await sendMessage(chatId,
+        `💸 *Como lançar uma saída:*\n\n` +
+        `*Formato:* gasto [valor] [descrição] [categoria] [forma pgto] [parcelas] [data] [-- observação]\n\n` +
+        `*Exemplos:*\n` +
+        `• gasto 45,90 mercado Alimentação\n` +
+        `• gasto 45,90 mercado Alimentação pix\n` +
+        `• gasto 1200 geladeira Casa credito 3x\n` +
+        `• gasto 250 farmacia Saúde debito 30/05\n` +
+        `• gasto 80 cinema Lazer dinheiro -- aniversário da Dany\n\n` +
+        `_Apenas valor e descrição são obrigatórios!_`
+      ); break;
+    case 'como_entrada':
+      await sendMessage(chatId,
+        `💰 *Como lançar uma entrada:*\n\n` +
+        `*Formato:* entrada [valor] [descrição] [categoria] [forma] [data]\n\n` +
+        `*Exemplos:*\n` +
+        `• entrada 5000 salario\n` +
+        `• entrada 5000 salario "Salário Jakson" pix 05/06\n` +
+        `• entrada 1500 freela "Freelance Jakson"\n\n` +
+        `_Apenas valor e descrição são obrigatórios!_`
+      ); break;
+    case 'como_apagar':
+      await sendMessage(chatId,
+        `📋 *Como lançar conta a pagar:*\n\n` +
+        `*Formato:* apagar [valor] [descrição] [dd/mm]\n\n` +
+        `*Exemplos:*\n` +
+        `• apagar 150,00 conta-luz 15/06\n` +
+        `• apagar 89,90 netflix 10/06\n\n` +
+        `_Um lembrete será criado no Google Calendar!_`
+      ); break;
+    case 'como_editar':
+      await sendMessage(chatId,
+        `✏️ *Como editar um lançamento:*\n\n` +
+        `*Formato:* editar [linha] [valor] [descrição] [categoria]\n\n` +
+        `*Exemplos:*\n` +
+        `• editar 5 65,00 mercado Alimentação\n\n` +
+        `_O número da linha aparece em cada confirmação de lançamento._\n` +
+        `_Use_ ultimos _para ver os últimos lançamentos com as linhas._`
+      ); break;
+    case 'como_excluir':
+      await sendMessage(chatId,
+        `🗑️ *Como excluir um lançamento:*\n\n` +
+        `*Formato:* excluir [linha]\n\n` +
+        `*Exemplo:*\n` +
+        `• excluir 5\n\n` +
+        `_O número da linha aparece em cada confirmação de lançamento._`
+      ); break;
+    case 'ver_categorias':
+      await handleCategorias(chatId); break;
+    case 'ver_formas':
+      await sendMessage(chatId,
+        `💳 *Formas de pagamento aceitas:*\n\n` +
+        `• pix\n• debito\n• credito\n• dinheiro\n• ted\n• doc\n\n` +
+        `_Para parcelamento no crédito adicione ex:_ 3x _após_ credito`
+      ); break;
+    case 'ver_resumo':
+      await handleResumo(chatId); break;
+    case 'ver_ultimos':
+      await handleUltimos(chatId); break;
+  }
+}
+
+// ============================================================
+//  MENU INTERATIVO
+// ============================================================
+async function handleMenu(chatId) {
+  await sendMessageWithButtons(chatId,
+    `👋 *Financeiro Casa - Menu*\n\nO que você quer fazer?`,
+    [
+      [{ text: '💸 Como lançar gasto', callback_data: 'como_gasto' },
+       { text: '💰 Como lançar entrada', callback_data: 'como_entrada' }],
+      [{ text: '📋 Como lançar conta a pagar', callback_data: 'como_apagar' }],
+      [{ text: '✏️ Como editar', callback_data: 'como_editar' },
+       { text: '🗑️ Como excluir', callback_data: 'como_excluir' }],
+      [{ text: '📊 Ver resumo do mês', callback_data: 'ver_resumo' },
+       { text: '📋 Últimos lançamentos', callback_data: 'ver_ultimos' }],
+      [{ text: '🏷️ Ver categorias', callback_data: 'ver_categorias' },
+       { text: '💳 Formas de pagamento', callback_data: 'ver_formas' }],
+    ]
+  );
+}
+
+// ============================================================
+//  PARSER INTELIGENTE — extrai dados do texto em qualquer ordem
+// ============================================================
+function parsearLancamento(text, tipo) {
+  // Remove o comando
+  let raw = text.replace(/^\/?(?:gasto|entrada)\s*/i, '').trim();
+
+  // Extrai observação (depois de --)
+  let observacao = '';
+  if (raw.includes('--')) {
+    const partes = raw.split('--');
+    raw = partes[0].trim();
+    observacao = partes[1].trim();
+  }
+
+  const tokens = raw.split(/\s+/);
+  let valor = null, descricao = null, categoria = null;
+  let formaPgto = '', parcelas = '1', dataGasto = null;
+  const usados = new Set();
+
+  // Extrai valor (número com vírgula ou ponto)
+  for (let i = 0; i < tokens.length; i++) {
+    const n = parseFloat(tokens[i].replace(',', '.'));
+    if (!isNaN(n) && tokens[i].match(/[\d,\.]+/)) {
+      valor = n; usados.add(i); break;
+    }
+  }
+
+  // Extrai parcelas (ex: 3x, 12x)
+  for (let i = 0; i < tokens.length; i++) {
+    if (usados.has(i)) continue;
+    if (/^\d+x$/i.test(tokens[i])) {
+      parcelas = tokens[i].replace(/x/i, '');
+      usados.add(i);
+    }
+  }
+
+  // Extrai forma de pagamento
+  for (let i = 0; i < tokens.length; i++) {
+    if (usados.has(i)) continue;
+    const t = tokens[i].toLowerCase();
+    if (FORMAS_PAGAMENTO.includes(t)) {
+      formaPgto = capitalizar(tokens[i]);
+      usados.add(i);
+    }
+  }
+
+  // Extrai data
+  for (let i = 0; i < tokens.length; i++) {
+    if (usados.has(i)) continue;
+    const d = parsearData(tokens[i], tokens[i+1]);
+    if (d) {
+      dataGasto = d.data;
+      usados.add(i);
+      if (d.consumiu2) usados.add(i+1);
+    }
+  }
+
+  // Extrai categoria
+  const lista = tipo === 'Entrada' ? CATEGORIAS_ENTRADA : CATEGORIAS_SAIDA;
+  for (let i = 0; i < tokens.length; i++) {
+    if (usados.has(i)) continue;
+    const t = tokens[i].toLowerCase();
+    const cat = lista.find(c => c.toLowerCase().startsWith(t) || t.startsWith(c.toLowerCase().split(' ')[0]));
+    if (cat) { categoria = cat; usados.add(i); break; }
+  }
+
+  // O que sobrou é a descrição
+  const restantes = tokens.filter((_, i) => !usados.has(i));
+  descricao = restantes.join(' ') || 'Sem descrição';
+  descricao = capitalizar(descricao);
+
+  if (!dataGasto) {
+    dataGasto = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  }
+  if (!categoria) {
+    categoria = tipo === 'Saída' ? 'Outros' : 'Outras entradas';
+  }
+
+  return { valor, descricao, categoria, formaPgto, parcelas, dataGasto, observacao };
+}
+
+// ============================================================
+//  PARSER DE DATA — aceita vários formatos
+// ============================================================
+function parsearData(token, tokenNext) {
+  if (!token) return null;
+  const t = token.toLowerCase();
+
+  // "ontem"
+  if (t === 'ontem') {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return { data: d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }), consumiu2: false };
+  }
+  // "hoje"
+  if (t === 'hoje') {
+    return { data: new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }), consumiu2: false };
+  }
+
+  // dd/mm ou dd/mm/yyyy
+  const regDiaMes = /^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/;
+  const m1 = token.match(regDiaMes);
+  if (m1) {
+    const dia = m1[1].padStart(2, '0');
+    const mes = m1[2].padStart(2, '0');
+    const ano = m1[3] ? (m1[3].length === 2 ? '20' + m1[3] : m1[3]) : new Date().getFullYear();
+    return { data: `${dia}/${mes}/${ano}`, consumiu2: false };
+  }
+
+  // "30 de maio" ou "30 do 05"
+  const regDiaMesExt = /^(\d{1,2})$/;
+  if (regDiaMesExt.test(token) && tokenNext) {
+    const tn = tokenNext.toLowerCase().replace(/^de\s+|^do\s+/, '');
+    const mesNum = MESES[tn] || parseInt(tn);
+    if (mesNum >= 1 && mesNum <= 12) {
+      const dia = token.padStart(2, '0');
+      const mes = String(mesNum).padStart(2, '0');
+      const ano = new Date().getFullYear();
+      return { data: `${dia}/${mes}/${ano}`, consumiu2: true };
+    }
+  }
+
+  return null;
+}
+
+// ============================================================
+//  HANDLER — lançamento
 // ============================================================
 async function handleLancamento(chatId, text, username, tipo) {
-  const semComando = text.replace(/^\/?(?:gasto|entrada)\s*/i, '').trim();
-  const partes     = semComando.split(' ');
+  const p = parsearLancamento(text, tipo);
 
-  if (partes.length < 2 || !partes[0]) {
+  if (!p.valor || isNaN(p.valor)) {
     const cmd = tipo === 'Saída' ? 'gasto' : 'entrada';
     await sendMessage(chatId,
-      `⚠️ Formato incorreto.\nUse: ${cmd} valor descrição categoria\n` +
-      `Ex: ${cmd} 45,90 mercado Alimentação\n\nDigite _categorias_ para ver as opções.`
+      `⚠️ Não encontrei o valor.\nUse: ${cmd} 45,90 descrição\nDigite _menu_ para ver exemplos.`
     );
     return;
   }
 
-  const valor      = parseFloat(partes[0].replace(',', '.'));
-  const descricao  = capitalizar(partes[1] || 'Sem descrição');
-  const catDigitada = partes[2] || '';
-  const data       = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
   const registradoEm = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  const mesAno = calcularMesAno(p.dataGasto);
+  const dadosBase = { ...p, username, tipo, registradoEm, mesAno };
 
-  if (isNaN(valor)) {
-    await sendMessage(chatId, '⚠️ Valor inválido. Ex: 45,90 ou 45.90');
-    return;
-  }
-
-  const categoria = encontrarCategoria(catDigitada, tipo) || (tipo === 'Saída' ? 'Outros' : 'Outras entradas');
-  const dadosLancamento = { data, descricao, valor, categoria, username, tipo, registradoEm };
-
-  // Verifica duplicata nos últimos 7 dias
-  const duplicata = await verificarDuplicata(valor, descricao);
+  // Verifica duplicata
+  const duplicata = await verificarDuplicata(p.valor, p.descricao);
   if (duplicata) {
-    pendentes[chatId] = { dados: dadosLancamento };
+    pendentes[chatId] = { dados: dadosBase };
     await sendMessage(chatId,
       `⚠️ *Lançamento similar encontrado!*\n` +
       `📌 Linha #${duplicata.linha} | ${duplicata.descricao} | R$ ${parseFloat(duplicata.valor).toFixed(2)} | ${duplicata.data}\n\n` +
-      `Pode ser um gasto recorrente (pedágio, estacionamento...).\n` +
-      `Confirma o novo lançamento?\n\n✅ *sim*  ou  ❌ *não*`
+      `Pode ser um gasto recorrente.\nConfirma o novo lançamento?\n\n✅ *sim*  ou  ❌ *não*`
     );
     return;
   }
 
-  await salvarLancamento(chatId, dadosLancamento);
+  await salvarLancamento(chatId, dadosBase);
 }
 
-// ============================================================
-//  CONFIRMAÇÃO DE DUPLICATA
-// ============================================================
-async function handleConfirmacaoDuplicata(chatId, textLower) {
+async function handleConfirmacao(chatId, textLower) {
   const pendente = pendentes[chatId];
   delete pendentes[chatId];
-
   if (textLower === 'sim' || textLower === 's') {
     await salvarLancamento(chatId, pendente.dados);
   } else {
@@ -136,117 +350,136 @@ async function handleConfirmacaoDuplicata(chatId, textLower) {
 }
 
 async function salvarLancamento(chatId, d) {
-  const linha = await appendToSheet(d.data, d.descricao, d.valor, d.categoria, d.username, d.tipo, 'texto', d.registradoEm);
-  const emoji = d.tipo === 'Saída' ? '💸' : '💰';
-  await sendMessage(chatId,
-    `${emoji} *${d.tipo} registrada!*\n` +
-    `📅 Data: ${d.data}\n` +
-    `📝 Descrição: ${d.descricao}\n` +
-    `💵 Valor: R$ ${parseFloat(d.valor).toFixed(2)}\n` +
-    `🏷️ Categoria: ${d.categoria}\n` +
-    `👤 Por: ${d.username}\n` +
-    `📌 Linha: #${linha}\n\n` +
-    `_Para editar: editar ${linha} novo-valor descrição categoria_\n` +
-    `_Para excluir: excluir ${linha}_`
-  );
+  const numParcelas = parseInt(d.parcelas) || 1;
+
+  if (numParcelas > 1) {
+    // Lança cada parcela
+    let linhas = [];
+    for (let i = 0; i < numParcelas; i++) {
+      const dataParc = somarMeses(d.dataGasto, i);
+      const mesAno   = calcularMesAno(dataParc);
+      const desc     = `${d.descricao} (${i+1}/${numParcelas})`;
+      const linha    = await appendToSheet(dataParc, desc, d.valor / numParcelas, d.categoria, d.username, d.tipo, d.formaPgto, `${i+1}/${numParcelas}`, d.observacao, mesAno, d.registradoEm);
+      linhas.push(linha);
+    }
+    const emoji = d.tipo === 'Saída' ? '💸' : '💰';
+    await sendMessage(chatId,
+      `${emoji} *${numParcelas}x registradas!*\n` +
+      `📝 Descrição: ${d.descricao}\n` +
+      `💵 Valor total: R$ ${parseFloat(d.valor).toFixed(2)}\n` +
+      `💵 Por parcela: R$ ${(d.valor / numParcelas).toFixed(2)}\n` +
+      `🏷️ Categoria: ${d.categoria}\n` +
+      `💳 Forma: ${d.formaPgto || 'Não informada'}\n` +
+      `👤 Por: ${d.username}\n` +
+      `📌 Linhas: #${linhas.join(', #')}`
+    );
+  } else {
+    const linha = await appendToSheet(d.dataGasto, d.descricao, d.valor, d.categoria, d.username, d.tipo, d.formaPgto, '', d.observacao, d.mesAno, d.registradoEm);
+    const emoji = d.tipo === 'Saída' ? '💸' : '💰';
+    await sendMessage(chatId,
+      `${emoji} *${d.tipo} registrada!*\n` +
+      `📅 Data: ${d.dataGasto}\n` +
+      `📝 Descrição: ${d.descricao}\n` +
+      `💵 Valor: R$ ${parseFloat(d.valor).toFixed(2)}\n` +
+      `🏷️ Categoria: ${d.categoria}\n` +
+      `💳 Forma: ${d.formaPgto || 'Não informada'}\n` +
+      (d.observacao ? `📌 Obs: ${d.observacao}\n` : '') +
+      `👤 Por: ${d.username}\n` +
+      `📌 Linha: #${linha}\n\n` +
+      `_editar ${linha} novo-valor descrição categoria_\n` +
+      `_excluir ${linha}_`
+    );
+  }
 }
 
 // ============================================================
-//  HANDLER — contas a pagar
+//  HANDLER — contas a pagar com Calendar
 // ============================================================
 async function handleApagar(chatId, text, username) {
   const semComando = text.replace(/^\/?apagar\s*/i, '').trim();
   const partes     = semComando.split(' ');
 
   if (partes.length < 3) {
-    await sendMessage(chatId,
-      '⚠️ Formato incorreto.\nUse: apagar valor descrição dd/mm\n' +
-      'Ex: apagar 150,00 conta-luz 15/06'
-    );
+    await sendMessage(chatId, '⚠️ Use: apagar 150,00 descrição dd/mm\nEx: apagar 150,00 conta-luz 15/06');
     return;
   }
 
   const valor      = parseFloat(partes[0].replace(',', '.'));
-  const descricao  = capitalizar(partes[1] || 'Sem descrição');
-  const vencimento = partes[2];
-  const data       = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  const descricao  = capitalizar(partes[1]);
+  const vencStr    = partes[2];
   const registradoEm = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  const dataHoje   = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  const mesAno     = calcularMesAno(dataHoje);
 
   if (isNaN(valor)) { await sendMessage(chatId, '⚠️ Valor inválido.'); return; }
 
-  const dataVenc = parsearDataVencimento(vencimento);
+  const dataVenc = parsearDataCompleta(vencStr);
   if (!dataVenc) { await sendMessage(chatId, '⚠️ Data inválida. Use dd/mm. Ex: 15/06'); return; }
 
-  const linha = await appendToSheet(data, descricao, valor, 'Casa', username, 'A Pagar', `vence:${vencimento}`, registradoEm);
+  const linha = await appendToSheet(dataHoje, descricao, valor, 'Casa', username, 'A Pagar', '', '', '', mesAno, registradoEm);
+
+  // Cria evento no Google Calendar
+  let calendarMsg = '';
+  try {
+    await criarEventoCalendar(descricao, valor, dataVenc, vencStr);
+    calendarMsg = `📅 Lembrete criado no Google Calendar!`;
+  } catch(err) {
+    console.error('Erro Calendar:', err);
+    calendarMsg = `⚠️ Não consegui criar o lembrete no Calendar.`;
+  }
 
   await sendMessage(chatId,
     `📋 *Conta a pagar registrada!*\n` +
-    `📅 Cadastrado em: ${data}\n` +
+    `📅 Cadastrado: ${dataHoje}\n` +
     `📝 Descrição: ${descricao}\n` +
     `💵 Valor: R$ ${valor.toFixed(2)}\n` +
-    `⏰ Vencimento: ${vencimento}\n` +
+    `⏰ Vencimento: ${vencStr}\n` +
     `👤 Por: ${username}\n` +
-    `📌 Linha: #${linha}\n\n` +
-    `_Para excluir: excluir ${linha}_`
+    `📌 Linha: #${linha}\n` +
+    calendarMsg
   );
 }
 
 // ============================================================
-//  HANDLER — editar linha
-//  editar 5 65,00 mercado Alimentação
+//  HANDLER — editar
 // ============================================================
 async function handleEditar(chatId, text, username) {
   const semComando = text.replace(/^\/?editar\s*/i, '').trim();
   const partes     = semComando.split(' ');
 
   if (partes.length < 3) {
-    await sendMessage(chatId,
-      '⚠️ Formato incorreto.\nUse: editar linha valor descrição categoria\n' +
-      'Ex: editar 5 65,00 mercado Alimentação'
-    );
+    await sendMessage(chatId, '⚠️ Use: editar linha valor descrição categoria\nEx: editar 5 65,00 mercado Alimentação');
     return;
   }
 
-  const linhaNum   = parseInt(partes[0]);
-  const valor      = parseFloat(partes[1].replace(',', '.'));
-  const descricao  = capitalizar(partes[2] || 'Sem descrição');
+  const linhaNum  = parseInt(partes[0]);
+  const valor     = parseFloat(partes[1].replace(',', '.'));
+  const descricao = capitalizar(partes[2]);
   const catDigitada = partes[3] || '';
-  const data       = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  const dataHoje  = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
   const registradoEm = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
-  if (isNaN(linhaNum) || isNaN(valor)) {
-    await sendMessage(chatId, '⚠️ Linha ou valor inválido.');
-    return;
-  }
+  if (isNaN(linhaNum) || isNaN(valor)) { await sendMessage(chatId, '⚠️ Linha ou valor inválido.'); return; }
 
   const categoria = encontrarCategoria(catDigitada, 'Saída') || 'Outros';
+  const mesAno    = calcularMesAno(dataHoje);
 
-  await editarLinha(linhaNum, data, descricao, valor, categoria, username, 'Saída', 'editado', registradoEm);
+  await editarLinha(linhaNum, dataHoje, descricao, valor, categoria, username, 'Saída', '', '', '', mesAno, registradoEm);
 
   await sendMessage(chatId,
     `✏️ *Linha #${linhaNum} editada!*\n` +
-    `📅 Data: ${data}\n` +
-    `📝 Descrição: ${descricao}\n` +
-    `💵 Valor: R$ ${valor.toFixed(2)}\n` +
-    `🏷️ Categoria: ${categoria}\n` +
-    `👤 Por: ${username}`
+    `📝 ${descricao} | R$ ${valor.toFixed(2)} | ${categoria}`
   );
 }
 
 // ============================================================
-//  HANDLER — excluir linha
+//  HANDLER — excluir
 // ============================================================
 async function handleExcluir(chatId, text) {
-  const semComando = text.replace(/^\/?excluir\s*/i, '').trim();
-  const linhaNum   = parseInt(semComando);
-
-  if (isNaN(linhaNum)) {
-    await sendMessage(chatId, '⚠️ Informe o número da linha.\nEx: excluir 5');
-    return;
-  }
-
+  const linhaNum = parseInt(text.replace(/^\/?excluir\s*/i, '').trim());
+  if (isNaN(linhaNum)) { await sendMessage(chatId, '⚠️ Use: excluir 5'); return; }
   await excluirLinha(linhaNum);
-  await sendMessage(chatId, `🗑️ Linha #${linhaNum} excluída com sucesso!`);
+  await sendMessage(chatId, `🗑️ Linha #${linhaNum} excluída!`);
 }
 
 // ============================================================
@@ -256,94 +489,20 @@ async function handleUltimos(chatId) {
   try {
     const rows = await getSheetRows();
     const dados = rows.slice(1).map((row, i) => ({ linha: i + 2, row }))
-      .filter(({ row }) => row[0])
-      .slice(-10)
-      .reverse();
+      .filter(({ row }) => row[0]).slice(-10).reverse();
 
-    if (dados.length === 0) {
-      await sendMessage(chatId, 'Nenhum lançamento encontrado.');
-      return;
-    }
+    if (dados.length === 0) { await sendMessage(chatId, 'Nenhum lançamento encontrado.'); return; }
 
     let msg = `📋 *Últimos lançamentos:*\n\n`;
     dados.forEach(({ linha, row }) => {
-      const tipo = row[5] === 'Entrada' ? '💰' : row[5] === 'A Pagar' ? '📋' : '💸';
-      msg += `${tipo} *#${linha}* | ${row[0]} | ${row[1]} | R$ ${parseFloat(row[2]).toFixed(2)} | ${row[3]}\n`;
+      const tipo  = row[5] === 'Entrada' ? '💰' : row[5] === 'A Pagar' ? '📋' : '💸';
+      const forma = row[6] ? ` | ${row[6]}` : '';
+      msg += `${tipo} *#${linha}* | ${row[0]} | ${row[1]} | R$ ${parseFloat(row[2]).toFixed(2)}${forma}\n`;
     });
-    msg += `\n_Para editar: editar linha valor descrição categoria_\n_Para excluir: excluir linha_`;
-
+    msg += `\n_editar linha valor descrição_\n_excluir linha_`;
     await sendMessage(chatId, msg);
-  } catch (err) {
+  } catch(err) {
     await sendMessage(chatId, '❌ Erro ao buscar lançamentos.');
-  }
-}
-
-// ============================================================
-//  HANDLER — foto
-// ============================================================
-async function handlePhoto(chatId, photos, caption, username) {
-  await sendMessage(chatId, '🔍 Analisando comprovante...');
-
-  const fileId  = photos[photos.length - 1].file_id;
-  const fileUrl = await getFileUrl(fileId);
-  if (!fileUrl) { await sendMessage(chatId, '❌ Não consegui baixar a imagem.'); return; }
-
-  if (!ANTHROPIC_KEY) { await handleSemIA(chatId, caption, username); return; }
-
-  const imgRes = await fetch(fileUrl);
-  const buffer = await imgRes.buffer();
-  const base64 = buffer.toString('base64');
-  const mime   = imgRes.headers.get('content-type') || 'image/jpeg';
-  const hoje   = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-  const registradoEm = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-
-  const prompt = `Analise este comprovante fiscal ou recibo e extraia as informações no formato JSON abaixo.
-Retorne APENAS o JSON, sem explicações ou markdown.
-{
-  "data": "dd/MM/yyyy",
-  "descricao": "nome do estabelecimento",
-  "valor": 0.00,
-  "categoria": "uma de: Alimentação, Casa, Transporte, Saúde, Educação, Lazer, Vestuário, Assinaturas, Pet, Investimento, Outros"
-}
-Se não identificar algum campo use: data="${hoje}", descricao="Comprovante", valor=0, categoria="Outros".`;
-
-  try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514', max_tokens: 500,
-        messages: [{ role: 'user', content: [
-          { type: 'image', source: { type: 'base64', media_type: mime, data: base64 } },
-          { type: 'text', text: prompt }
-        ]}]
-      })
-    });
-    const result = await resp.json();
-    const dados  = JSON.parse(result.content[0].text.trim());
-    if (caption) dados.descricao = caption;
-
-    const linha = await appendToSheet(dados.data, dados.descricao, dados.valor, dados.categoria, username, 'Saída', 'comprovante', registradoEm);
-    await sendMessage(chatId,
-      `✅ *Comprovante registrado!*\n` +
-      `📅 Data: ${dados.data}\n` +
-      `📝 Descrição: ${dados.descricao}\n` +
-      `💵 Valor: R$ ${parseFloat(dados.valor).toFixed(2)}\n` +
-      `🏷️ Categoria: ${dados.categoria}\n` +
-      `👤 Por: ${username}\n` +
-      `📌 Linha: #${linha}`
-    );
-  } catch (err) {
-    console.error('Erro IA:', err);
-    await handleSemIA(chatId, caption, username);
-  }
-}
-
-async function handleSemIA(chatId, caption, username) {
-  if (caption) {
-    await handleLancamento(chatId, 'gasto ' + caption, username, 'Saída');
-  } else {
-    await sendMessage(chatId, '📸 Foto recebida!\nMande com legenda: valor descrição categoria\nEx: 45,90 mercado Alimentação');
   }
 }
 
@@ -354,26 +513,26 @@ async function handleResumo(chatId) {
   try {
     const rows = await getSheetRows();
     const hoje = new Date();
-    const mes  = hoje.getMonth();
-    const ano  = hoje.getFullYear();
+    const mesAnoAtual = `${String(hoje.getMonth()+1).padStart(2,'0')}/${hoje.getFullYear()}`;
 
     let totalEntradas = 0, totalSaidas = 0, totalAPagar = 0;
     const porCategoria = {};
+    const porForma = {};
 
     for (const row of rows.slice(1)) {
-      if (!row[0]) continue;
-      const partes = row[0].toString().split('/');
-      if (partes.length < 3) continue;
-      const data = new Date(partes[2], partes[1] - 1, partes[0]);
-      if (data.getMonth() !== mes || data.getFullYear() !== ano) continue;
-
+      if (!row[0] || row[9] !== mesAnoAtual) continue;
       const valor = parseFloat(row[2]) || 0;
       const tipo  = row[5] || 'Saída';
       const cat   = row[3] || 'Outros';
+      const forma = row[6] || 'Não informada';
 
       if (tipo === 'Entrada')      totalEntradas += valor;
       else if (tipo === 'A Pagar') totalAPagar   += valor;
-      else { totalSaidas += valor; porCategoria[cat] = (porCategoria[cat] || 0) + valor; }
+      else {
+        totalSaidas += valor;
+        porCategoria[cat]  = (porCategoria[cat]  || 0) + valor;
+        porForma[forma]    = (porForma[forma]    || 0) + valor;
+      }
     }
 
     const nomeMes = hoje.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric', timeZone: 'America/Sao_Paulo' });
@@ -385,39 +544,43 @@ async function handleResumo(chatId) {
 
     if (Object.keys(porCategoria).length > 0) {
       msg += `\n*Por categoria:*\n`;
-      Object.entries(porCategoria).sort((a, b) => b[1] - a[1]).forEach(([cat, val]) => {
+      Object.entries(porCategoria).sort((a,b) => b[1]-a[1]).forEach(([cat,val]) => {
         msg += `🏷️ ${cat}: R$ ${val.toFixed(2)}\n`;
       });
     }
+
+    if (Object.keys(porForma).length > 0) {
+      msg += `\n*Por forma de pagamento:*\n`;
+      Object.entries(porForma).sort((a,b) => b[1]-a[1]).forEach(([f,val]) => {
+        msg += `💳 ${f}: R$ ${val.toFixed(2)}\n`;
+      });
+    }
+
     await sendMessage(chatId, msg);
-  } catch (err) {
+  } catch(err) {
     await sendMessage(chatId, '❌ Erro ao buscar resumo.');
   }
 }
 
 // ============================================================
-//  HANDLER — categorias e ajuda
+//  HANDLER — categorias
 // ============================================================
 async function handleCategorias(chatId) {
   let msg = `🏷️ *Categorias disponíveis*\n\n`;
-  msg += `*💸 Saídas:*\n${CATEGORIAS_SAIDA.map(c => `• ${c}`).join('\n')}\n\n`;
-  msg += `*💰 Entradas:*\n${CATEGORIAS_ENTRADA.map(c => `• ${c}`).join('\n')}`;
+  msg += `*💸 Saídas:*\n${CATEGORIAS_SAIDA.map(c=>`• ${c}`).join('\n')}\n\n`;
+  msg += `*💰 Entradas:*\n${CATEGORIAS_ENTRADA.map(c=>`• ${c}`).join('\n')}`;
   await sendMessage(chatId, msg);
 }
 
-async function handleAjuda(chatId) {
-  await sendMessage(chatId,
-    `👋 *Financeiro Casa - Comandos*\n\n` +
-    `💸 *Saída:* gasto 45,90 mercado Alimentação\n` +
-    `💰 *Entrada:* entrada 5000 salario\n` +
-    `📋 *A pagar:* apagar 150,00 conta-luz 15/06\n` +
-    `✏️ *Editar:* editar 5 65,00 mercado Alimentação\n` +
-    `🗑️ *Excluir:* excluir 5\n` +
-    `📋 *Últimos:* ultimos\n` +
-    `📊 *Resumo:* resumo\n` +
-    `🏷️ *Categorias:* categorias\n\n` +
-    `_Funciona com ou sem / e maiúsculo ou minúsculo_`
-  );
+// ============================================================
+//  HANDLER — sem IA (foto sem chave)
+// ============================================================
+async function handleSemIA(chatId, caption, username) {
+  if (caption) {
+    await handleLancamento(chatId, 'gasto ' + caption, username, 'Saída');
+  } else {
+    await sendMessage(chatId, '📸 Foto recebida!\nMande com legenda: 45,90 mercado Alimentação pix\n\nDigite _menu_ para ver os comandos.');
+  }
 }
 
 // ============================================================
@@ -435,41 +598,44 @@ function encontrarCategoria(texto, tipo) {
   return lista.find(c => c.toLowerCase().includes(lower) || lower.includes(c.toLowerCase().split(' ')[0]));
 }
 
-function parsearDataVencimento(str) {
+function calcularMesAno(dataStr) {
+  if (!dataStr) return '';
+  const partes = dataStr.split('/');
+  if (partes.length < 2) return '';
+  return `${partes[1].padStart(2,'0')}/${partes[2] || new Date().getFullYear()}`;
+}
+
+function somarMeses(dataStr, meses) {
+  const partes = dataStr.split('/');
+  const d = new Date(partes[2] || new Date().getFullYear(), parseInt(partes[1])-1+meses, parseInt(partes[0]));
+  return d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+}
+
+function parsearDataCompleta(str) {
   if (!str) return null;
   const partes = str.split('/');
   if (partes.length < 2) return null;
-  const data = new Date(new Date().getFullYear(), parseInt(partes[1]) - 1, parseInt(partes[0]));
-  return isNaN(data.getTime()) ? null : data;
+  const ano = partes[2] ? parseInt(partes[2]) : new Date().getFullYear();
+  return new Date(ano, parseInt(partes[1])-1, parseInt(partes[0]));
 }
 
 async function verificarDuplicata(valor, descricao) {
   try {
-    const rows  = await getSheetRows();
-    const agora = new Date();
-    const limite = new Date(agora.getTime() - 7 * 24 * 60 * 60 * 1000); // 7 dias atrás
-
-    for (let i = rows.length - 1; i >= 1; i--) {
+    const rows   = await getSheetRows();
+    const limite = new Date(Date.now() - 7*24*60*60*1000);
+    for (let i = rows.length-1; i >= 1; i--) {
       const row = rows[i];
       if (!row[0]) continue;
-
-      const partes = row[0].toString().split('/');
+      const partes  = row[0].toString().split('/');
       if (partes.length < 3) continue;
-      const dataRow = new Date(partes[2], partes[1] - 1, partes[0]);
+      const dataRow = new Date(partes[2], partes[1]-1, partes[0]);
       if (dataRow < limite) break;
-
-      const valorRow = parseFloat(row[2]);
-      const descRow  = (row[1] || '').toLowerCase();
-      const descBusca = descricao.toLowerCase();
-
-      if (valorRow === valor && (descRow.includes(descBusca) || descBusca.includes(descRow))) {
-        return { linha: i + 1, descricao: row[1], valor: row[2], data: row[0] };
+      if (parseFloat(row[2]) === valor && (row[1]||'').toLowerCase().includes(descricao.toLowerCase().split(' ')[0])) {
+        return { linha: i+1, descricao: row[1], valor: row[2], data: row[0] };
       }
     }
     return null;
-  } catch (err) {
-    return null;
-  }
+  } catch(err) { return null; }
 }
 
 // ============================================================
@@ -478,61 +644,77 @@ async function verificarDuplicata(valor, descricao) {
 async function getSheetsClient() {
   const auth = new google.auth.GoogleAuth({
     credentials: GOOGLE_CREDENTIALS,
-    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+    scopes: ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/calendar'],
   });
-  return google.sheets({ version: 'v4', auth });
+  return { sheets: google.sheets({ version: 'v4', auth }), auth };
 }
 
-async function appendToSheet(data, descricao, valor, categoria, quemPagou, tipo, origem, registradoEm) {
-  const sheets = await getSheetsClient();
+async function appendToSheet(dataGasto, descricao, valor, categoria, quemPagou, tipo, formaPgto, parcelas, observacao, mesAno, registradoEm) {
+  const { sheets } = await getSheetsClient();
   const res = await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
-    range: 'Página1!A:H',
+    range: 'Página1!A:K',
     valueInputOption: 'USER_ENTERED',
-    resource: { values: [[data, descricao, valor, categoria, quemPagou, tipo, origem, registradoEm]] },
+    resource: { values: [[dataGasto, descricao, valor, categoria, quemPagou, tipo, formaPgto, parcelas, observacao, mesAno, registradoEm]] },
   });
-  // Retorna o número da linha inserida
   const range = res.data.updates.updatedRange;
   const match = range.match(/(\d+)$/);
   return match ? parseInt(match[1]) : '?';
 }
 
-async function editarLinha(linha, data, descricao, valor, categoria, quemPagou, tipo, origem, registradoEm) {
-  const sheets = await getSheetsClient();
+async function editarLinha(linha, dataGasto, descricao, valor, categoria, quemPagou, tipo, formaPgto, parcelas, observacao, mesAno, registradoEm) {
+  const { sheets } = await getSheetsClient();
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
-    range: `Página1!A${linha}:H${linha}`,
+    range: `Página1!A${linha}:K${linha}`,
     valueInputOption: 'USER_ENTERED',
-    resource: { values: [[data, descricao, valor, categoria, quemPagou, tipo, origem, registradoEm]] },
+    resource: { values: [[dataGasto, descricao, valor, categoria, quemPagou, tipo, formaPgto, parcelas, observacao, mesAno, registradoEm]] },
   });
 }
 
 async function excluirLinha(linha) {
-  const sheets = await getSheetsClient();
+  const { sheets } = await getSheetsClient();
   await sheets.spreadsheets.batchUpdate({
     spreadsheetId: SHEET_ID,
-    resource: {
-      requests: [{
-        deleteDimension: {
-          range: {
-            sheetId: 0,
-            dimension: 'ROWS',
-            startIndex: linha - 1,
-            endIndex: linha,
-          }
-        }
-      }]
-    }
+    resource: { requests: [{ deleteDimension: { range: { sheetId: 0, dimension: 'ROWS', startIndex: linha-1, endIndex: linha } } }] }
   });
 }
 
 async function getSheetRows() {
-  const sheets = await getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: SHEET_ID,
-    range: 'Página1!A:H',
-  });
+  const { sheets } = await getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: 'Página1!A:K' });
   return res.data.values || [];
+}
+
+// ============================================================
+//  GOOGLE CALENDAR
+// ============================================================
+async function criarEventoCalendar(descricao, valor, dataVenc, dataStr) {
+  const auth = new google.auth.GoogleAuth({
+    credentials: GOOGLE_CREDENTIALS,
+    scopes: ['https://www.googleapis.com/auth/calendar'],
+  });
+  const calendar = google.calendar({ version: 'v3', auth });
+
+  const dataInicio = dataVenc.toISOString().split('T')[0];
+
+  await calendar.events.insert({
+    calendarId: CALENDAR_ID,
+    resource: {
+      summary: `💸 Vence: ${descricao} - R$ ${valor.toFixed(2)}`,
+      description: `Conta a pagar lançada pelo bot Financeiro Casa.\nValor: R$ ${valor.toFixed(2)}\nVencimento: ${dataStr}`,
+      start: { date: dataInicio },
+      end:   { date: dataInicio },
+      reminders: {
+        useDefault: false,
+        overrides: [
+          { method: 'popup', minutes: 3 * 24 * 60 },  // 3 dias antes
+          { method: 'popup', minutes: 24 * 60 },       // 1 dia antes
+          { method: 'popup', minutes: 0 },             // no dia
+        ]
+      }
+    }
+  });
 }
 
 // ============================================================
@@ -543,6 +725,17 @@ async function sendMessage(chatId, text) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' }),
+  });
+}
+
+async function sendMessageWithButtons(chatId, text, buttons) {
+  await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId, text, parse_mode: 'Markdown',
+      reply_markup: { inline_keyboard: buttons }
+    }),
   });
 }
 
