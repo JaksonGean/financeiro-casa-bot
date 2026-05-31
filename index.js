@@ -12,19 +12,28 @@ const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const SHEET_ID       = process.env.SHEET_ID;
 const ANTHROPIC_KEY  = process.env.ANTHROPIC_KEY || '';
 
-// Google Sheets auth via Service Account
 const GOOGLE_CREDENTIALS = process.env.GOOGLE_CREDENTIALS
   ? JSON.parse(process.env.GOOGLE_CREDENTIALS)
   : null;
+
+// Categorias válidas
+const CATEGORIAS_SAIDA = [
+  'Alimentação', 'Casa', 'Transporte', 'Saúde', 'Educação',
+  'Lazer', 'Vestuário', 'Assinaturas', 'Pet', 'Investimento', 'Outros'
+];
+const CATEGORIAS_ENTRADA = [
+  'Salário Jakson', 'Salário Dany', 'Freelance Jakson',
+  'Freelance Dany', 'Rendimento', 'Presente', 'Outras entradas'
+];
+const TODAS_CATEGORIAS = [...CATEGORIAS_SAIDA, ...CATEGORIAS_ENTRADA];
 
 // ============================================================
 //  WEBHOOK
 // ============================================================
 app.post('/webhook', async (req, res) => {
-  res.sendStatus(200); // responde imediatamente ao Telegram
+  res.sendStatus(200);
   try {
-    const update = req.body;
-    await handleUpdate(update);
+    await handleUpdate(req.body);
   } catch (err) {
     console.error('Erro no webhook:', err);
   }
@@ -49,26 +58,34 @@ async function handleUpdate(update) {
     return;
   }
 
-  // Comandos de texto
-  if (text.startsWith('/gasto'))        { await handleGastoTexto(chatId, text, username); return; }
-  if (text.startsWith('/resumo'))       { await handleResumo(chatId); return; }
+  if (text.startsWith('/gasto'))    { await handleLancamento(chatId, text, username, 'Saída'); return; }
+  if (text.startsWith('/entrada'))  { await handleLancamento(chatId, text, username, 'Entrada'); return; }
+  if (text.startsWith('/apagar'))   { await handleApagar(chatId, text, username); return; }
+  if (text.startsWith('/resumo'))   { await handleResumo(chatId); return; }
+  if (text.startsWith('/categorias')) { await handleCategorias(chatId); return; }
   if (text.startsWith('/ajuda') || text === '/start') { await handleAjuda(chatId); return; }
 }
 
 // ============================================================
-//  GASTO POR TEXTO — /gasto 45,90 mercado alimentação
+//  HANDLER — lançamento de gasto ou entrada
+//  /gasto 45,90 mercado Alimentação
+//  /entrada 5000 salario "Salário Jakson"
 // ============================================================
-async function handleGastoTexto(chatId, text, username) {
-  const partes = text.replace('/gasto', '').trim().split(' ');
+async function handleLancamento(chatId, text, username, tipo) {
+  const comando = tipo === 'Saída' ? '/gasto' : '/entrada';
+  const partes  = text.replace(comando, '').trim().split(' ');
 
   if (partes.length < 2) {
-    await sendMessage(chatId, '⚠️ Formato incorreto.\nUse: /gasto 45,90 descrição categoria\nExemplo: /gasto 45,90 mercado alimentação');
+    await sendMessage(chatId,
+      `⚠️ Formato incorreto.\nUse: ${comando} valor descrição categoria\n` +
+      `Ex: ${comando} 45,90 mercado Alimentação\n\nDigite /categorias para ver as opções.`
+    );
     return;
   }
 
   const valor     = parseFloat(partes[0].replace(',', '.'));
   const descricao = partes[1] || 'Sem descrição';
-  const categoria = partes[2] || 'Outros';
+  const catDigitada = partes[2] || '';
   const data      = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
   if (isNaN(valor)) {
@@ -76,14 +93,69 @@ async function handleGastoTexto(chatId, text, username) {
     return;
   }
 
-  await appendToSheet(data, descricao, valor, categoria, username, 'texto');
+  // Tenta encontrar categoria mais próxima
+  const categoria = encontrarCategoria(catDigitada, tipo) || (tipo === 'Saída' ? 'Outros' : 'Outras entradas');
+
+  await appendToSheet(data, descricao, valor, categoria, username, tipo, 'texto');
+
+  const emoji = tipo === 'Saída' ? '💸' : '💰';
   await sendMessage(chatId,
-    `✅ *Gasto registrado!*\n📅 Data: ${data}\n📝 Descrição: ${descricao}\n💰 Valor: R$ ${valor.toFixed(2)}\n🏷️ Categoria: ${categoria}\n👤 Por: ${username}`
+    `${emoji} *${tipo} registrada!*\n` +
+    `📅 Data: ${data}\n` +
+    `📝 Descrição: ${descricao}\n` +
+    `💵 Valor: R$ ${valor.toFixed(2)}\n` +
+    `🏷️ Categoria: ${categoria}\n` +
+    `👤 Por: ${username}`
   );
 }
 
 // ============================================================
-//  GASTO POR FOTO
+//  HANDLER — contas a pagar
+//  /apagar 150,00 conta-de-luz 15/06
+// ============================================================
+async function handleApagar(chatId, text, username) {
+  const partes = text.replace('/apagar', '').trim().split(' ');
+
+  if (partes.length < 3) {
+    await sendMessage(chatId,
+      '⚠️ Formato incorreto.\nUse: /apagar valor descrição dd/mm\n' +
+      'Ex: /apagar 150,00 conta-de-luz 15/06'
+    );
+    return;
+  }
+
+  const valor     = parseFloat(partes[0].replace(',', '.'));
+  const descricao = partes[1] || 'Sem descrição';
+  const vencimento = partes[2];
+  const data      = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+
+  if (isNaN(valor)) {
+    await sendMessage(chatId, '⚠️ Valor inválido. Ex: 150,00');
+    return;
+  }
+
+  // Valida formato da data de vencimento
+  const dataVenc = parsearDataVencimento(vencimento);
+  if (!dataVenc) {
+    await sendMessage(chatId, '⚠️ Data inválida. Use o formato dd/mm. Ex: 15/06');
+    return;
+  }
+
+  await appendToSheet(data, descricao, valor, 'Casa', username, 'A Pagar', `vence:${vencimento}`);
+
+  await sendMessage(chatId,
+    `📋 *Conta a pagar registrada!*\n` +
+    `📅 Cadastrado em: ${data}\n` +
+    `📝 Descrição: ${descricao}\n` +
+    `💵 Valor: R$ ${valor.toFixed(2)}\n` +
+    `⏰ Vencimento: ${vencimento}\n` +
+    `👤 Por: ${username}\n\n` +
+    `_Lembrete no Google Calendar em breve! (em desenvolvimento)_`
+  );
+}
+
+// ============================================================
+//  HANDLER — foto (comprovante)
 // ============================================================
 async function handlePhoto(chatId, photos, caption, username) {
   await sendMessage(chatId, '🔍 Analisando comprovante...');
@@ -97,20 +169,19 @@ async function handlePhoto(chatId, photos, caption, username) {
     return;
   }
 
-  // Baixa imagem como base64
-  const imgRes  = await fetch(fileUrl);
-  const buffer  = await imgRes.buffer();
-  const base64  = buffer.toString('base64');
-  const mime    = imgRes.headers.get('content-type') || 'image/jpeg';
+  const imgRes = await fetch(fileUrl);
+  const buffer = await imgRes.buffer();
+  const base64 = buffer.toString('base64');
+  const mime   = imgRes.headers.get('content-type') || 'image/jpeg';
+  const hoje   = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
-  const hoje = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
   const prompt = `Analise este comprovante fiscal ou recibo e extraia as informações no formato JSON abaixo.
 Retorne APENAS o JSON, sem explicações ou markdown.
 {
   "data": "dd/MM/yyyy",
-  "descricao": "nome do estabelecimento ou descrição",
+  "descricao": "nome do estabelecimento",
   "valor": 0.00,
-  "categoria": "uma das opções: Alimentação, Transporte, Saúde, Educação, Lazer, Casa, Vestuário, Outros"
+  "categoria": "uma de: Alimentação, Casa, Transporte, Saúde, Educação, Lazer, Vestuário, Assinaturas, Pet, Investimento, Outros"
 }
 Se não identificar algum campo use: data="${hoje}", descricao="Comprovante", valor=0, categoria="Outros".`;
 
@@ -131,9 +202,14 @@ Se não identificar algum campo use: data="${hoje}", descricao="Comprovante", va
     const dados  = JSON.parse(result.content[0].text.trim());
     if (caption) dados.descricao = caption;
 
-    await appendToSheet(dados.data, dados.descricao, dados.valor, dados.categoria, username, 'comprovante');
+    await appendToSheet(dados.data, dados.descricao, dados.valor, dados.categoria, username, 'Saída', 'comprovante');
     await sendMessage(chatId,
-      `✅ *Comprovante registrado!*\n📅 Data: ${dados.data}\n📝 Descrição: ${dados.descricao}\n💰 Valor: R$ ${parseFloat(dados.valor).toFixed(2)}\n🏷️ Categoria: ${dados.categoria}\n👤 Por: ${username}`
+      `✅ *Comprovante registrado!*\n` +
+      `📅 Data: ${dados.data}\n` +
+      `📝 Descrição: ${dados.descricao}\n` +
+      `💵 Valor: R$ ${parseFloat(dados.valor).toFixed(2)}\n` +
+      `🏷️ Categoria: ${dados.categoria}\n` +
+      `👤 Por: ${username}`
     );
   } catch (err) {
     console.error('Erro IA:', err);
@@ -143,48 +219,63 @@ Se não identificar algum campo use: data="${hoje}", descricao="Comprovante", va
 
 async function handleSemIA(chatId, caption, username) {
   if (caption) {
-    await handleGastoTexto(chatId, '/gasto ' + caption, username);
+    await handleLancamento(chatId, '/gasto ' + caption, username, 'Saída');
   } else {
-    await sendMessage(chatId, '📸 Foto recebida!\nMande uma legenda com: valor descrição categoria\nEx: _45,90 mercado alimentação_\n\nOu use:\n/gasto 45,90 mercado alimentação');
+    await sendMessage(chatId,
+      '📸 Foto recebida!\nMande com legenda: valor descrição categoria\n' +
+      'Ex: _45,90 mercado Alimentação_\n\nOu use:\n/gasto 45,90 mercado Alimentação'
+    );
   }
 }
 
 // ============================================================
-//  RESUMO DO MÊS
+//  HANDLER — resumo do mês
 // ============================================================
 async function handleResumo(chatId) {
   try {
-    const rows = await getSheetRows();
-    const hoje = new Date();
-    const mes  = hoje.getMonth();
-    const ano  = hoje.getFullYear();
+    const rows  = await getSheetRows();
+    const hoje  = new Date();
+    const mes   = hoje.getMonth();
+    const ano   = hoje.getFullYear();
 
-    let total = 0;
+    let totalEntradas = 0;
+    let totalSaidas   = 0;
+    let totalAPagar   = 0;
     const porCategoria = {};
 
     for (const row of rows.slice(1)) {
       if (!row[0]) continue;
-      const partes = row[0].split('/');
-      const data   = new Date(partes[2], partes[1] - 1, partes[0]);
+      const partes = row[0].toString().split('/');
+      if (partes.length < 3) continue;
+      const data = new Date(partes[2], partes[1] - 1, partes[0]);
       if (data.getMonth() !== mes || data.getFullYear() !== ano) continue;
 
-      const valor     = parseFloat(row[2]) || 0;
-      const categoria = row[3] || 'Outros';
-      total += valor;
-      porCategoria[categoria] = (porCategoria[categoria] || 0) + valor;
+      const valor = parseFloat(row[2]) || 0;
+      const tipo  = row[5] || 'Saída';
+      const cat   = row[3] || 'Outros';
+
+      if (tipo === 'Entrada')       totalEntradas += valor;
+      else if (tipo === 'A Pagar')  totalAPagar   += valor;
+      else {
+        totalSaidas += valor;
+        porCategoria[cat] = (porCategoria[cat] || 0) + valor;
+      }
     }
 
     const nomeMes = hoje.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric', timeZone: 'America/Sao_Paulo' });
     let msg = `📊 *Resumo de ${nomeMes}*\n\n`;
+    msg += `💰 *Entradas: R$ ${totalEntradas.toFixed(2)}*\n`;
+    msg += `💸 *Saídas: R$ ${totalSaidas.toFixed(2)}*\n`;
+    if (totalAPagar > 0) msg += `📋 *A Pagar: R$ ${totalAPagar.toFixed(2)}*\n`;
+    msg += `📈 *Saldo: R$ ${(totalEntradas - totalSaidas).toFixed(2)}*\n\n`;
 
-    if (Object.keys(porCategoria).length === 0) {
-      msg += 'Nenhum gasto registrado este mês.';
-    } else {
+    if (Object.keys(porCategoria).length > 0) {
+      msg += `*Saídas por categoria:*\n`;
       Object.entries(porCategoria).sort((a, b) => b[1] - a[1]).forEach(([cat, val]) => {
         msg += `🏷️ ${cat}: R$ ${val.toFixed(2)}\n`;
       });
-      msg += `\n💰 *Total: R$ ${total.toFixed(2)}*`;
     }
+
     await sendMessage(chatId, msg);
   } catch (err) {
     console.error('Erro resumo:', err);
@@ -193,16 +284,50 @@ async function handleResumo(chatId) {
 }
 
 // ============================================================
-//  AJUDA
+//  HANDLER — categorias
+// ============================================================
+async function handleCategorias(chatId) {
+  let msg = `🏷️ *Categorias disponíveis*\n\n`;
+  msg += `*💸 Saídas:*\n${CATEGORIAS_SAIDA.map(c => `• ${c}`).join('\n')}\n\n`;
+  msg += `*💰 Entradas:*\n${CATEGORIAS_ENTRADA.map(c => `• ${c}`).join('\n')}`;
+  await sendMessage(chatId, msg);
+}
+
+// ============================================================
+//  HANDLER — ajuda
 // ============================================================
 async function handleAjuda(chatId) {
   await sendMessage(chatId,
     `👋 *Financeiro Casa - Comandos*\n\n` +
-    `📝 *Registrar gasto por texto:*\n/gasto valor descrição categoria\nEx: /gasto 45,90 mercado alimentação\n\n` +
-    `📸 *Registrar por comprovante:*\nEnvie a foto com legenda: 45,90 mercado alimentação\n\n` +
-    `📊 *Ver resumo do mês:*\n/resumo\n\n` +
+    `💸 *Registrar saída:*\n/gasto 45,90 mercado Alimentação\n\n` +
+    `💰 *Registrar entrada:*\n/entrada 5000 salario "Salário Jakson"\n\n` +
+    `📋 *Conta a pagar:*\n/apagar 150,00 conta-de-luz 15/06\n\n` +
+    `📸 *Comprovante:*\nEnvie a foto com legenda: 45,90 mercado Alimentação\n\n` +
+    `📊 *Resumo do mês:*\n/resumo\n\n` +
+    `🏷️ *Ver categorias:*\n/categorias\n\n` +
     `❓ *Ajuda:*\n/ajuda`
   );
+}
+
+// ============================================================
+//  UTILITÁRIOS
+// ============================================================
+function encontrarCategoria(texto, tipo) {
+  if (!texto) return null;
+  const lista = tipo === 'Entrada' ? CATEGORIAS_ENTRADA : CATEGORIAS_SAIDA;
+  const lower = texto.toLowerCase();
+  return lista.find(c => c.toLowerCase().includes(lower) || lower.includes(c.toLowerCase().split(' ')[0]));
+}
+
+function parsearDataVencimento(str) {
+  if (!str) return null;
+  const partes = str.split('/');
+  if (partes.length < 2) return null;
+  const dia = parseInt(partes[0]);
+  const mes = parseInt(partes[1]) - 1;
+  const ano = new Date().getFullYear();
+  const data = new Date(ano, mes, dia);
+  return isNaN(data.getTime()) ? null : data;
 }
 
 // ============================================================
@@ -216,13 +341,13 @@ async function getSheetsClient() {
   return google.sheets({ version: 'v4', auth });
 }
 
-async function appendToSheet(data, descricao, valor, categoria, quemPagou, origem) {
+async function appendToSheet(data, descricao, valor, categoria, quemPagou, tipo, origem) {
   const sheets = await getSheetsClient();
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
-    range: 'Página1!A:F',
+    range: 'Página1!A:G',
     valueInputOption: 'USER_ENTERED',
-    resource: { values: [[data, descricao, valor, categoria, quemPagou, origem]] },
+    resource: { values: [[data, descricao, valor, categoria, quemPagou, tipo, origem]] },
   });
 }
 
@@ -230,7 +355,7 @@ async function getSheetRows() {
   const sheets = await getSheetsClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: 'Página1!A:F',
+    range: 'Página1!A:G',
   });
   return res.data.values || [];
 }
