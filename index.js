@@ -5,9 +5,6 @@ const { google } = require('googleapis');
 const app = express();
 app.use(express.json());
 
-// ============================================================
-//  CONFIGURAÇÕES
-// ============================================================
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const SHEET_ID       = process.env.SHEET_ID;
 const ANTHROPIC_KEY  = process.env.ANTHROPIC_KEY || '';
@@ -16,7 +13,6 @@ const GOOGLE_CREDENTIALS = process.env.GOOGLE_CREDENTIALS
   ? JSON.parse(process.env.GOOGLE_CREDENTIALS)
   : null;
 
-// Categorias válidas
 const CATEGORIAS_SAIDA = [
   'Alimentação', 'Casa', 'Transporte', 'Saúde', 'Educação',
   'Lazer', 'Vestuário', 'Assinaturas', 'Pet', 'Investimento', 'Outros'
@@ -25,7 +21,6 @@ const CATEGORIAS_ENTRADA = [
   'Salário Jakson', 'Salário Dany', 'Freelance Jakson',
   'Freelance Dany', 'Rendimento', 'Presente', 'Outras entradas'
 ];
-const TODAS_CATEGORIAS = [...CATEGORIAS_SAIDA, ...CATEGORIAS_ENTRADA];
 
 // ============================================================
 //  WEBHOOK
@@ -49,8 +44,11 @@ async function handleUpdate(update) {
   if (!message) return;
 
   const chatId   = message.chat.id;
-  const username = (message.from.username || message.from.first_name || 'desconhecido').toLowerCase();
+  const fromName = message.from.first_name || '';
+  const username = (message.from.username || fromName || 'desconhecido');
+  // Preserva capitalização do nome mas normaliza para comparação
   const text     = message.text || '';
+  const textLower = text.toLowerCase().trim();
 
   // Foto (comprovante)
   if (message.photo && message.photo.length > 0) {
@@ -58,33 +56,46 @@ async function handleUpdate(update) {
     return;
   }
 
-  if (text.startsWith('/gasto'))    { await handleLancamento(chatId, text, username, 'Saída'); return; }
-  if (text.startsWith('/entrada'))  { await handleLancamento(chatId, text, username, 'Entrada'); return; }
-  if (text.startsWith('/apagar'))   { await handleApagar(chatId, text, username); return; }
-  if (text.startsWith('/resumo'))   { await handleResumo(chatId); return; }
-  if (text.startsWith('/categorias')) { await handleCategorias(chatId); return; }
-  if (text.startsWith('/ajuda') || text === '/start') { await handleAjuda(chatId); return; }
+  // Detecta comandos com ou sem barra, maiúsculo ou minúsculo
+  if (textLower.startsWith('/gasto') || textLower.startsWith('gasto')) {
+    await handleLancamento(chatId, text, username, 'Saída'); return;
+  }
+  if (textLower.startsWith('/entrada') || textLower.startsWith('entrada')) {
+    await handleLancamento(chatId, text, username, 'Entrada'); return;
+  }
+  if (textLower.startsWith('/apagar') || textLower.startsWith('apagar')) {
+    await handleApagar(chatId, text, username); return;
+  }
+  if (textLower.startsWith('/resumo') || textLower.startsWith('resumo')) {
+    await handleResumo(chatId); return;
+  }
+  if (textLower.startsWith('/categorias') || textLower.startsWith('categorias')) {
+    await handleCategorias(chatId); return;
+  }
+  if (textLower.startsWith('/ajuda') || textLower.startsWith('ajuda') || textLower === '/start') {
+    await handleAjuda(chatId); return;
+  }
 }
 
 // ============================================================
-//  HANDLER — lançamento de gasto ou entrada
-//  /gasto 45,90 mercado Alimentação
-//  /entrada 5000 salario "Salário Jakson"
+//  HANDLER — lançamento
 // ============================================================
 async function handleLancamento(chatId, text, username, tipo) {
-  const comando = tipo === 'Saída' ? '/gasto' : '/entrada';
-  const partes  = text.replace(comando, '').trim().split(' ');
+  // Remove o comando (com ou sem barra, qualquer capitalização)
+  const semComando = text.replace(/^\/?(?:gasto|entrada)\s*/i, '').trim();
+  const partes     = semComando.split(' ');
 
-  if (partes.length < 2) {
+  if (partes.length < 2 || !partes[0]) {
+    const cmd = tipo === 'Saída' ? 'gasto' : 'entrada';
     await sendMessage(chatId,
-      `⚠️ Formato incorreto.\nUse: ${comando} valor descrição categoria\n` +
-      `Ex: ${comando} 45,90 mercado Alimentação\n\nDigite /categorias para ver as opções.`
+      `⚠️ Formato incorreto.\nUse: ${cmd} valor descrição categoria\n` +
+      `Ex: ${cmd} 45,90 mercado Alimentação\n\nDigite categorias para ver as opções.`
     );
     return;
   }
 
   const valor     = parseFloat(partes[0].replace(',', '.'));
-  const descricao = partes[1] || 'Sem descrição';
+  const descricao = capitalizar(partes[1] || 'Sem descrição');
   const catDigitada = partes[2] || '';
   const data      = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
@@ -93,7 +104,6 @@ async function handleLancamento(chatId, text, username, tipo) {
     return;
   }
 
-  // Tenta encontrar categoria mais próxima
   const categoria = encontrarCategoria(catDigitada, tipo) || (tipo === 'Saída' ? 'Outros' : 'Outras entradas');
 
   await appendToSheet(data, descricao, valor, categoria, username, tipo, 'texto');
@@ -111,30 +121,29 @@ async function handleLancamento(chatId, text, username, tipo) {
 
 // ============================================================
 //  HANDLER — contas a pagar
-//  /apagar 150,00 conta-de-luz 15/06
 // ============================================================
 async function handleApagar(chatId, text, username) {
-  const partes = text.replace('/apagar', '').trim().split(' ');
+  const semComando = text.replace(/^\/?apagar\s*/i, '').trim();
+  const partes     = semComando.split(' ');
 
   if (partes.length < 3) {
     await sendMessage(chatId,
-      '⚠️ Formato incorreto.\nUse: /apagar valor descrição dd/mm\n' +
-      'Ex: /apagar 150,00 conta-de-luz 15/06'
+      '⚠️ Formato incorreto.\nUse: apagar valor descrição dd/mm\n' +
+      'Ex: apagar 150,00 conta-de-luz 15/06'
     );
     return;
   }
 
-  const valor     = parseFloat(partes[0].replace(',', '.'));
-  const descricao = partes[1] || 'Sem descrição';
+  const valor      = parseFloat(partes[0].replace(',', '.'));
+  const descricao  = capitalizar(partes[1] || 'Sem descrição');
   const vencimento = partes[2];
-  const data      = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  const data       = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
   if (isNaN(valor)) {
     await sendMessage(chatId, '⚠️ Valor inválido. Ex: 150,00');
     return;
   }
 
-  // Valida formato da data de vencimento
   const dataVenc = parsearDataVencimento(vencimento);
   if (!dataVenc) {
     await sendMessage(chatId, '⚠️ Data inválida. Use o formato dd/mm. Ex: 15/06');
@@ -149,13 +158,12 @@ async function handleApagar(chatId, text, username) {
     `📝 Descrição: ${descricao}\n` +
     `💵 Valor: R$ ${valor.toFixed(2)}\n` +
     `⏰ Vencimento: ${vencimento}\n` +
-    `👤 Por: ${username}\n\n` +
-    `_Lembrete no Google Calendar em breve! (em desenvolvimento)_`
+    `👤 Por: ${username}`
   );
 }
 
 // ============================================================
-//  HANDLER — foto (comprovante)
+//  HANDLER — foto
 // ============================================================
 async function handlePhoto(chatId, photos, caption, username) {
   await sendMessage(chatId, '🔍 Analisando comprovante...');
@@ -219,28 +227,26 @@ Se não identificar algum campo use: data="${hoje}", descricao="Comprovante", va
 
 async function handleSemIA(chatId, caption, username) {
   if (caption) {
-    await handleLancamento(chatId, '/gasto ' + caption, username, 'Saída');
+    await handleLancamento(chatId, 'gasto ' + caption, username, 'Saída');
   } else {
     await sendMessage(chatId,
       '📸 Foto recebida!\nMande com legenda: valor descrição categoria\n' +
-      'Ex: _45,90 mercado Alimentação_\n\nOu use:\n/gasto 45,90 mercado Alimentação'
+      'Ex: _45,90 mercado Alimentação_\n\nOu use:\ngasto 45,90 mercado Alimentação'
     );
   }
 }
 
 // ============================================================
-//  HANDLER — resumo do mês
+//  HANDLER — resumo
 // ============================================================
 async function handleResumo(chatId) {
   try {
-    const rows  = await getSheetRows();
-    const hoje  = new Date();
-    const mes   = hoje.getMonth();
-    const ano   = hoje.getFullYear();
+    const rows = await getSheetRows();
+    const hoje = new Date();
+    const mes  = hoje.getMonth();
+    const ano  = hoje.getFullYear();
 
-    let totalEntradas = 0;
-    let totalSaidas   = 0;
-    let totalAPagar   = 0;
+    let totalEntradas = 0, totalSaidas = 0, totalAPagar = 0;
     const porCategoria = {};
 
     for (const row of rows.slice(1)) {
@@ -254,8 +260,8 @@ async function handleResumo(chatId) {
       const tipo  = row[5] || 'Saída';
       const cat   = row[3] || 'Outros';
 
-      if (tipo === 'Entrada')       totalEntradas += valor;
-      else if (tipo === 'A Pagar')  totalAPagar   += valor;
+      if (tipo === 'Entrada')      totalEntradas += valor;
+      else if (tipo === 'A Pagar') totalAPagar   += valor;
       else {
         totalSaidas += valor;
         porCategoria[cat] = (porCategoria[cat] || 0) + valor;
@@ -264,13 +270,13 @@ async function handleResumo(chatId) {
 
     const nomeMes = hoje.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric', timeZone: 'America/Sao_Paulo' });
     let msg = `📊 *Resumo de ${nomeMes}*\n\n`;
-    msg += `💰 *Entradas: R$ ${totalEntradas.toFixed(2)}*\n`;
-    msg += `💸 *Saídas: R$ ${totalSaidas.toFixed(2)}*\n`;
-    if (totalAPagar > 0) msg += `📋 *A Pagar: R$ ${totalAPagar.toFixed(2)}*\n`;
-    msg += `📈 *Saldo: R$ ${(totalEntradas - totalSaidas).toFixed(2)}*\n\n`;
+    msg += `💰 Entradas: R$ ${totalEntradas.toFixed(2)}\n`;
+    msg += `💸 Saídas: R$ ${totalSaidas.toFixed(2)}\n`;
+    if (totalAPagar > 0) msg += `📋 A Pagar: R$ ${totalAPagar.toFixed(2)}\n`;
+    msg += `📈 *Saldo: R$ ${(totalEntradas - totalSaidas).toFixed(2)}*\n`;
 
     if (Object.keys(porCategoria).length > 0) {
-      msg += `*Saídas por categoria:*\n`;
+      msg += `\n*Por categoria:*\n`;
       Object.entries(porCategoria).sort((a, b) => b[1] - a[1]).forEach(([cat, val]) => {
         msg += `🏷️ ${cat}: R$ ${val.toFixed(2)}\n`;
       });
@@ -299,19 +305,24 @@ async function handleCategorias(chatId) {
 async function handleAjuda(chatId) {
   await sendMessage(chatId,
     `👋 *Financeiro Casa - Comandos*\n\n` +
-    `💸 *Registrar saída:*\n/gasto 45,90 mercado Alimentação\n\n` +
-    `💰 *Registrar entrada:*\n/entrada 5000 salario "Salário Jakson"\n\n` +
-    `📋 *Conta a pagar:*\n/apagar 150,00 conta-de-luz 15/06\n\n` +
-    `📸 *Comprovante:*\nEnvie a foto com legenda: 45,90 mercado Alimentação\n\n` +
-    `📊 *Resumo do mês:*\n/resumo\n\n` +
-    `🏷️ *Ver categorias:*\n/categorias\n\n` +
-    `❓ *Ajuda:*\n/ajuda`
+    `💸 *Registrar saída:*\ngasto 45,90 mercado Alimentação\n\n` +
+    `💰 *Registrar entrada:*\nentrada 5000 salario "Salário Jakson"\n\n` +
+    `📋 *Conta a pagar:*\napagar 150,00 conta-luz 15/06\n\n` +
+    `📸 *Comprovante:*\nEnvie a foto com legenda\n\n` +
+    `📊 *Resumo do mês:*\nresumo\n\n` +
+    `🏷️ *Ver categorias:*\ncategorias\n\n` +
+    `_Comandos funcionam com ou sem / e maiúsculo ou minúsculo_`
   );
 }
 
 // ============================================================
 //  UTILITÁRIOS
 // ============================================================
+function capitalizar(texto) {
+  if (!texto) return texto;
+  return texto.charAt(0).toUpperCase() + texto.slice(1).toLowerCase();
+}
+
 function encontrarCategoria(texto, tipo) {
   if (!texto) return null;
   const lista = tipo === 'Entrada' ? CATEGORIAS_ENTRADA : CATEGORIAS_SAIDA;
@@ -323,9 +334,9 @@ function parsearDataVencimento(str) {
   if (!str) return null;
   const partes = str.split('/');
   if (partes.length < 2) return null;
-  const dia = parseInt(partes[0]);
-  const mes = parseInt(partes[1]) - 1;
-  const ano = new Date().getFullYear();
+  const dia  = parseInt(partes[0]);
+  const mes  = parseInt(partes[1]) - 1;
+  const ano  = new Date().getFullYear();
   const data = new Date(ano, mes, dia);
   return isNaN(data.getTime()) ? null : data;
 }
@@ -378,8 +389,5 @@ async function getFileUrl(fileId) {
   return `https://api.telegram.org/file/bot${TELEGRAM_TOKEN}/${data.result.file_path}`;
 }
 
-// ============================================================
-//  START
-// ============================================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Bot rodando na porta ${PORT}`));
