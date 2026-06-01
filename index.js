@@ -4,6 +4,7 @@ const { google } = require('googleapis');
 
 const app = express();
 app.use(express.json());
+app.use(express.static('public'));
 
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const SHEET_ID       = process.env.SHEET_ID;
