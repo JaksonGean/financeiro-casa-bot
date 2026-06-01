@@ -555,7 +555,7 @@ async function handleApagar(chatId, text, username) {
 
   const dataHoje     = new Date().toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});
   const registradoEm = new Date().toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'});
-  const dataVencFormatada = dataVenc.toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});
+  const dataVencFormatada = dataVenc.toLocaleDateString();
   const mesAno       = calcularMesAno(dataVencFormatada);
   const linha = await appendToSheet(dataVencFormatada, desc, valor, 'Casa', username, 'A Pagar', '', '', 'Lancado em '+dataHoje, mesAno, registradoEm, '');
 
@@ -726,7 +726,14 @@ function parsearDataCompleta(str) {
   if (!str) return null;
   const p = str.split('/');
   if (p.length < 2) return null;
-  return new Date(p[2]?parseInt(p[2]):new Date().getFullYear(), parseInt(p[1])-1, parseInt(p[0]));
+  // Retorna objeto com data formatada (sem usar new Date para evitar bug de fuso)
+  const dia = p[0].padStart(2,'0');
+  const mes = p[1].padStart(2,'0');
+  const ano = p[2] ? parseInt(p[2]) : new Date().getFullYear();
+  return {
+    toISOString: () => `${ano}-${mes}-${dia}T12:00:00.000Z`,
+    toLocaleDateString: () => `${dia}/${mes}/${ano}`
+  };
 }
 
 async function verificarDuplicata(valor, descricao) {
