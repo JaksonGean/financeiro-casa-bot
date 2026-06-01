@@ -489,11 +489,13 @@ function renderTopCategorias(saidas) {
 }
 
 function renderVencimentos(aPagar) {
-  const hoje = new Date();
+  // Usa meia-noite em Brasília para evitar bug de fuso
+  const agoraBR  = new Date(new Date().toLocaleString('en-US', {timeZone:'America/Sao_Paulo'}));
+  const hoje     = new Date(agoraBR.getFullYear(), agoraBR.getMonth(), agoraBR.getDate());
   const items = aPagar.map(d => {
     const partes = d.data.split('/');
     const dt = partes.length >= 3 ? new Date(parseInt(partes[2]), parseInt(partes[1])-1, parseInt(partes[0])) : null;
-    const dias = dt ? Math.ceil((dt - hoje) / 86400000) : null;
+    const dias = dt ? Math.round((dt - hoje) / 86400000) : null;
     return { ...d, dt, dias };
   }).sort((a,b) => (a.dias||999) - (b.dias||999)).slice(0, 8);
 
