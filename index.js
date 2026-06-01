@@ -147,7 +147,7 @@ async function handleUpdate(update) {
 
   if (tl.startsWith('/gasto')      || tl.startsWith('gasto'))      { await handleLancamento(chatId, text, username, 'Saída');   return; }
   if (tl.startsWith('/entrada')    || tl.startsWith('entrada'))    { await handleLancamento(chatId, text, username, 'Entrada'); return; }
-  if (tl.startsWith('/apagar')     || tl.startsWith('apagar'))     { await handleApagar(chatId, text, username);                return; }
+  if (tl.startsWith('/apagar')     || tl.startsWith('apagar')     || tl.startsWith('a pagar')) { await handleApagar(chatId, text, username); return; }
   if (tl.startsWith('/editar')     || tl.startsWith('editar'))     { await handleEditar(chatId, text, username);                return; }
   if (tl.startsWith('/excluir')    || tl.startsWith('excluir'))    { await handleExcluir(chatId, text);                        return; }
   if (tl.startsWith('/resumo')     || tl.startsWith('resumo')  ||
@@ -544,7 +544,7 @@ async function salvarLancamento(chatId, d) {
 //  HANDLER — contas a pagar
 // ============================================================
 async function handleApagar(chatId, text, username) {
-  const semCmd = text.replace(/^\/?apagar\s*/i,'').trim().split(' ');
+  const semCmd = text.replace(/^\/?a\s?pagar\s*/i,'').trim().split(' ');
   if (semCmd.length < 3) { await sendMessage(chatId,'⚠️ Use: apagar 150,00 descrição dd/mm'); return; }
   const valor   = parseFloat(semCmd[0].replace(',','.'));
   const desc    = capitalizar(semCmd[1]);
