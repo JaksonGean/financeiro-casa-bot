@@ -559,9 +559,13 @@ async function handleApagar(chatId, text, username) {
   const mesAno       = calcularMesAno(dataVencFormatada);
   const linha = await appendToSheet(dataVencFormatada, desc, valor, 'Casa', username, 'A Pagar', '', '', 'Lancado em '+dataHoje, mesAno, registradoEm, '');
 
-  let calMsg = '';
-  try { await criarEventoCalendar(desc, valor, dataVenc, vencStr); calMsg = `📅 Lembrete criado no Calendar!`; }
-  catch(e) { calMsg = `⚠️ Erro ao criar lembrete no Calendar.`; }
+  let calMsg = '', calEventId = '';
+  try {
+    calEventId = await criarEventoCalendar(desc, valor, dataVenc, vencStr);
+    calMsg = `📅 Lembrete criado no Calendar!`;
+    // Salva o ID do evento na coluna M
+    if (calEventId) await salvarCalendarId(linha, calEventId);
+  } catch(e) { calMsg = `⚠️ Erro ao criar lembrete no Calendar.`; }
 
   await sendMessage(chatId,
     `📋 *Conta a pagar registrada!*\n📝 ${desc} | R$ ${fmt(valor)}\n⏰ Vencimento: ${vencStr}\n👤 ${username} | 📌 Linha #${linha}\n${calMsg}`
@@ -603,8 +607,21 @@ async function handleEditar(chatId, text, username) {
 async function handleExcluir(chatId, text) {
   const linhaNum = parseInt(text.replace(/^\/?excluir\s*/i,'').trim());
   if (isNaN(linhaNum)) { await sendMessage(chatId,'⚠️ Use: excluir 5'); return; }
+
+  // Verifica se tem evento no Calendar (coluna M) antes de excluir a linha
+  let calMsg = '';
+  try {
+    const rows = await getSheetRows();
+    const row  = rows[linhaNum - 1];
+    const eventId = row && row[12] ? row[12].trim() : null;
+    if (eventId) {
+      await excluirEventoCalendar(eventId);
+      calMsg = ' e lembrete do Calendar removido';
+    }
+  } catch(e) {}
+
   await excluirLinha(linhaNum);
-  await sendMessage(chatId, `🗑️ Linha #${linhaNum} excluída!`);
+  await sendMessage(chatId, `🗑️ Linha #${linhaNum} excluída${calMsg}!`);
 }
 
 // ============================================================
@@ -743,9 +760,9 @@ async function getSheetsClient() {
 async function appendToSheet(dataGasto, descricao, valor, categoria, quemPagou, tipo, formaPgto, parcelas, observacao, mesAno, registradoEm, conta) {
   const { sheets } = await getSheetsClient();
   const res = await sheets.spreadsheets.values.append({
-    spreadsheetId: SHEET_ID, range: 'Página1!A:L',
+    spreadsheetId: SHEET_ID, range: 'Página1!A:M',
     valueInputOption:'USER_ENTERED',
-    resource: { values: [[dataGasto, descricao, valor, categoria, quemPagou, tipo, formaPgto, parcelas, observacao, mesAno, registradoEm, conta||'']] }
+    resource: { values: [[dataGasto, descricao, valor, categoria, quemPagou, tipo, formaPgto, parcelas, observacao, mesAno, registradoEm, conta||'', '']] }
   });
   const match = res.data.updates.updatedRange.match(/(\d+)$/);
   return match ? parseInt(match[1]) : '?';
@@ -770,8 +787,18 @@ async function excluirLinha(linha) {
 
 async function getSheetRows() {
   const { sheets } = await getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({ spreadsheetId:SHEET_ID, range:'Página1!A:L' });
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId:SHEET_ID, range:'Página1!A:M' });
   return res.data.values||[];
+}
+
+async function salvarCalendarId(linha, eventId) {
+  const { sheets } = await getSheetsClient();
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `Página1!M${linha}`,
+    valueInputOption: 'USER_ENTERED',
+    resource: { values: [[eventId]] }
+  });
 }
 
 // ============================================================
@@ -780,7 +807,7 @@ async function getSheetRows() {
 async function criarEventoCalendar(descricao, valor, dataVenc, dataStr) {
   const auth = new google.auth.GoogleAuth({ credentials:GOOGLE_CREDENTIALS, scopes:['https://www.googleapis.com/auth/calendar'] });
   const calendar = google.calendar({version:'v3',auth});
-  await calendar.events.insert({
+  const res = await calendar.events.insert({
     calendarId: CALENDAR_ID,
     resource: {
       summary: `💸 Vence: ${descricao} - R$ ${valor.toFixed(2)}`,
@@ -794,6 +821,15 @@ async function criarEventoCalendar(descricao, valor, dataVenc, dataStr) {
       ]}
     }
   });
+  return res.data.id; // retorna o ID do evento
+}
+
+async function excluirEventoCalendar(eventId) {
+  try {
+    const auth = new google.auth.GoogleAuth({ credentials:GOOGLE_CREDENTIALS, scopes:['https://www.googleapis.com/auth/calendar'] });
+    const calendar = google.calendar({version:'v3',auth});
+    await calendar.events.delete({ calendarId: CALENDAR_ID, eventId });
+  } catch(e) { console.error('Erro ao excluir evento Calendar:', e.message); }
 }
 
 // ============================================================
