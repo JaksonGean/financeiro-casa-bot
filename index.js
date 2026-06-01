@@ -553,10 +553,11 @@ async function handleApagar(chatId, text, username) {
   const dataVenc = parsearDataCompleta(vencStr);
   if (!dataVenc) { await sendMessage(chatId,'⚠️ Data inválida. Use dd/mm. Ex: 15/06'); return; }
 
-  const dataHoje    = new Date().toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});
+  const dataHoje     = new Date().toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});
   const registradoEm = new Date().toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'});
-  const mesAno      = calcularMesAno(dataHoje);
-  const linha = await appendToSheet(dataHoje, desc, valor, 'Casa', username, 'A Pagar', '', '', '', mesAno, registradoEm, '');
+  const dataVencFormatada = dataVenc.toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});
+  const mesAno       = calcularMesAno(dataVencFormatada);
+  const linha = await appendToSheet(dataVencFormatada, desc, valor, 'Casa', username, 'A Pagar', '', '', 'Lancado em '+dataHoje, mesAno, registradoEm, '');
 
   let calMsg = '';
   try { await criarEventoCalendar(desc, valor, dataVenc, vencStr); calMsg = `📅 Lembrete criado no Calendar!`; }
