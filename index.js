@@ -27,7 +27,6 @@ const MESES = {
   'julho':7,'agosto':8,'setembro':9,'outubro':10,'novembro':11,'dezembro':12
 };
 
-// Confirmações pendentes
 const pendentes = {};
 
 // ============================================================
@@ -45,7 +44,6 @@ app.get('/', (req, res) => res.send('Bot Financeiro Casa rodando!'));
 //  HANDLER PRINCIPAL
 // ============================================================
 async function handleUpdate(update) {
-  // Callback de botões inline — deve ser verificado ANTES de ler update.message
   if (update.callback_query) {
     await handleCallback(update.callback_query);
     return;
@@ -59,13 +57,11 @@ async function handleUpdate(update) {
   const text      = message.text || '';
   const textLower = text.toLowerCase().trim();
 
-  // Foto
   if (message.photo && message.photo.length > 0) {
     await handleSemIA(chatId, message.caption || '', username);
     return;
   }
 
-  // Confirmação de duplicata pendente
   if (pendentes[chatId]) {
     await handleConfirmacao(chatId, textLower);
     return;
@@ -80,6 +76,7 @@ async function handleUpdate(update) {
       textLower.startsWith('/saldo')     || textLower.startsWith('saldo'))      { await handleResumo(chatId); return; }
   if (textLower.startsWith('/ultimos')   || textLower.startsWith('ultimos'))    { await handleUltimos(chatId); return; }
   if (textLower.startsWith('/categorias')|| textLower.startsWith('categorias')) { await handleCategorias(chatId); return; }
+  if (textLower.startsWith('/metas')     || textLower.startsWith('metas'))      { await handleMetas(chatId); return; }
   if (textLower.startsWith('/menu')      || textLower.startsWith('menu') ||
       textLower.startsWith('/ajuda')     || textLower.startsWith('ajuda') ||
       textLower === '/start')                                                    { await handleMenu(chatId); return; }
@@ -159,6 +156,8 @@ async function handleCallback(query) {
       await handleResumo(chatId); break;
     case 'ver_ultimos':
       await handleUltimos(chatId); break;
+    case 'ver_metas':
+      await handleMetas(chatId); break;
   }
 }
 
@@ -176,20 +175,152 @@ async function handleMenu(chatId) {
        { text: '🗑️ Como excluir', callback_data: 'como_excluir' }],
       [{ text: '📊 Ver resumo do mês', callback_data: 'ver_resumo' },
        { text: '📋 Últimos lançamentos', callback_data: 'ver_ultimos' }],
-      [{ text: '🏷️ Ver categorias', callback_data: 'ver_categorias' },
-       { text: '💳 Formas de pagamento', callback_data: 'ver_formas' }],
+      [{ text: '🎯 Ver metas', callback_data: 'ver_metas' },
+       { text: '🏷️ Ver categorias', callback_data: 'ver_categorias' }],
+      [{ text: '💳 Formas de pagamento', callback_data: 'ver_formas' }],
     ]
   );
 }
 
 // ============================================================
-//  PARSER INTELIGENTE — extrai dados do texto em qualquer ordem
+//  METAS — lê aba "Metas" da planilha
+// ============================================================
+async function getMetas() {
+  try {
+    const { sheets } = await getSheetsClient();
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: 'Metas!A:C'
+    });
+    const rows = res.data.values || [];
+    const metas = {};
+    for (let i = 1; i < rows.length; i++) {
+      const categoria = (rows[i][0] || '').trim();
+      const meta      = parseFloat((rows[i][1] || '0').toString().replace(',', '.')) || 0;
+      const tipo      = (rows[i][2] || 'Gasto').trim();
+      if (categoria && meta > 0) {
+        metas[categoria] = { meta, tipo };
+      }
+    }
+    return metas;
+  } catch(err) {
+    console.error('Erro ao ler metas:', err);
+    return {};
+  }
+}
+
+async function getGastoMesCategoria(categoria) {
+  try {
+    const rows = await getSheetRows();
+    const hoje = new Date();
+    const mesAnoAtual = `${String(hoje.getMonth()+1).padStart(2,'0')}/${hoje.getFullYear()}`;
+    let total = 0;
+    for (const row of rows.slice(1)) {
+      if (!row[0]) continue;
+      if (row[9] !== mesAnoAtual) continue;
+      if ((row[3] || '').trim() === categoria && row[5] !== 'Entrada') {
+        total += parseFloat(row[2]) || 0;
+      }
+    }
+    return total;
+  } catch(err) { return 0; }
+}
+
+// Retorna string de progresso da meta para uma categoria, ou null se não tiver meta
+async function getMensagemMeta(categoria, valorLancado) {
+  const metas = await getMetas();
+  if (!metas[categoria]) return null;
+
+  const { meta, tipo } = metas[categoria];
+  const gastoAntes = await getGastoMesCategoria(categoria);
+  const gastoTotal = gastoAntes; // já inclui o lançamento atual que acabou de ser salvo
+  const restante   = meta - gastoTotal;
+  const pct        = Math.min(100, (gastoTotal / meta * 100)).toFixed(0);
+
+  if (tipo === 'Investimento') {
+    const falta = meta - gastoTotal;
+    if (falta <= 0) {
+      return `🎯 Meta de *${categoria}* atingida! R$ ${gastoTotal.toFixed(2)} de R$ ${meta.toFixed(2)}`;
+    }
+    return `🎯 *${categoria}:* R$ ${gastoTotal.toFixed(2)} investido de R$ ${meta.toFixed(2)} — faltam R$ ${falta.toFixed(2)}`;
+  }
+
+  // Gasto normal
+  if (restante < 0) {
+    return `⚠️ *Meta de ${categoria} ultrapassada!* Gastou R$ ${gastoTotal.toFixed(2)} de R$ ${meta.toFixed(2)} (${pct}%)`;
+  }
+  if (restante === 0) {
+    return `⚠️ *Meta de ${categoria} no limite!* R$ ${gastoTotal.toFixed(2)} de R$ ${meta.toFixed(2)}`;
+  }
+  return `🎯 *${categoria}:* R$ ${gastoTotal.toFixed(2)} de R$ ${meta.toFixed(2)} — saldo R$ ${restante.toFixed(2)}`;
+}
+
+// ============================================================
+//  HANDLER — ver todas as metas
+// ============================================================
+async function handleMetas(chatId) {
+  const metas = await getMetas();
+  if (Object.keys(metas).length === 0) {
+    await sendMessage(chatId, '📋 Nenhuma meta cadastrada na aba *Metas* da planilha.');
+    return;
+  }
+
+  const hoje = new Date();
+  const mesAnoAtual = `${String(hoje.getMonth()+1).padStart(2,'0')}/${hoje.getFullYear()}`;
+  const rows = await getSheetRows();
+
+  // Calcula gasto atual por categoria
+  const gastos = {};
+  for (const row of rows.slice(1)) {
+    if (!row[0] || row[9] !== mesAnoAtual) continue;
+    const cat = (row[3] || '').trim();
+    if (row[5] !== 'Entrada') {
+      gastos[cat] = (gastos[cat] || 0) + (parseFloat(row[2]) || 0);
+    }
+  }
+
+  const nomeMes = hoje.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric', timeZone: 'America/Sao_Paulo' });
+  let msg = `🎯 *Metas — ${nomeMes}*\n\n`;
+
+  for (const [cat, { meta, tipo }] of Object.entries(metas)) {
+    const gasto    = gastos[cat] || 0;
+    const restante = meta - gasto;
+    const pct      = Math.min(100, (gasto / meta * 100)).toFixed(0);
+    const barra    = gerarBarra(gasto, meta);
+
+    if (tipo === 'Investimento') {
+      const emoji = gasto >= meta ? '✅' : '📈';
+      msg += `${emoji} *${cat}* (Investimento)\n`;
+      msg += `${barra} ${pct}%\n`;
+      msg += `R$ ${gasto.toFixed(2)} de R$ ${meta.toFixed(2)}`;
+      msg += gasto >= meta ? ` ✓ Meta atingida!\n\n` : ` — faltam R$ ${restante.toFixed(2)}\n\n`;
+    } else {
+      const emoji = restante < 0 ? '🔴' : restante < meta * 0.2 ? '🟡' : '🟢';
+      msg += `${emoji} *${cat}*\n`;
+      msg += `${barra} ${pct}%\n`;
+      msg += `R$ ${gasto.toFixed(2)} de R$ ${meta.toFixed(2)}`;
+      msg += restante < 0
+        ? ` ⚠️ Passou R$ ${Math.abs(restante).toFixed(2)}\n\n`
+        : ` — saldo R$ ${restante.toFixed(2)}\n\n`;
+    }
+  }
+
+  msg += `_Edite as metas direto na aba *Metas* da planilha_`;
+  await sendMessage(chatId, msg);
+}
+
+function gerarBarra(atual, meta) {
+  const pct    = Math.min(1, atual / meta);
+  const cheios = Math.round(pct * 8);
+  return '█'.repeat(cheios) + '░'.repeat(8 - cheios);
+}
+
+// ============================================================
+//  PARSER INTELIGENTE
 // ============================================================
 function parsearLancamento(text, tipo) {
-  // Remove o comando
   let raw = text.replace(/^\/?(?:gasto|entrada)\s*/i, '').trim();
 
-  // Extrai observação (depois de --)
   let observacao = '';
   if (raw.includes('--')) {
     const partes = raw.split('--');
@@ -202,7 +333,6 @@ function parsearLancamento(text, tipo) {
   let formaPgto = '', parcelas = '1', dataGasto = null;
   const usados = new Set();
 
-  // Extrai valor (número com vírgula ou ponto)
   for (let i = 0; i < tokens.length; i++) {
     const n = parseFloat(tokens[i].replace(',', '.'));
     if (!isNaN(n) && tokens[i].match(/[\d,\.]+/)) {
@@ -210,7 +340,6 @@ function parsearLancamento(text, tipo) {
     }
   }
 
-  // Extrai parcelas (ex: 3x, 12x)
   for (let i = 0; i < tokens.length; i++) {
     if (usados.has(i)) continue;
     if (/^\d+x$/i.test(tokens[i])) {
@@ -219,7 +348,6 @@ function parsearLancamento(text, tipo) {
     }
   }
 
-  // Extrai forma de pagamento
   for (let i = 0; i < tokens.length; i++) {
     if (usados.has(i)) continue;
     const t = tokens[i].toLowerCase();
@@ -229,7 +357,6 @@ function parsearLancamento(text, tipo) {
     }
   }
 
-  // Extrai data
   for (let i = 0; i < tokens.length; i++) {
     if (usados.has(i)) continue;
     const d = parsearData(tokens[i], tokens[i+1]);
@@ -240,7 +367,6 @@ function parsearLancamento(text, tipo) {
     }
   }
 
-  // Extrai categoria
   const lista = tipo === 'Entrada' ? CATEGORIAS_ENTRADA : CATEGORIAS_SAIDA;
   for (let i = 0; i < tokens.length; i++) {
     if (usados.has(i)) continue;
@@ -249,7 +375,6 @@ function parsearLancamento(text, tipo) {
     if (cat) { categoria = cat; usados.add(i); break; }
   }
 
-  // O que sobrou é a descrição
   const restantes = tokens.filter((_, i) => !usados.has(i));
   descricao = restantes.join(' ') || 'Sem descrição';
   descricao = capitalizar(descricao);
@@ -265,24 +390,21 @@ function parsearLancamento(text, tipo) {
 }
 
 // ============================================================
-//  PARSER DE DATA — aceita vários formatos
+//  PARSER DE DATA
 // ============================================================
 function parsearData(token, tokenNext) {
   if (!token) return null;
   const t = token.toLowerCase();
 
-  // "ontem"
   if (t === 'ontem') {
     const d = new Date();
     d.setDate(d.getDate() - 1);
     return { data: d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }), consumiu2: false };
   }
-  // "hoje"
   if (t === 'hoje') {
     return { data: new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }), consumiu2: false };
   }
 
-  // dd/mm ou dd/mm/yyyy
   const regDiaMes = /^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/;
   const m1 = token.match(regDiaMes);
   if (m1) {
@@ -292,7 +414,6 @@ function parsearData(token, tokenNext) {
     return { data: `${dia}/${mes}/${ano}`, consumiu2: false };
   }
 
-  // "30 de maio" ou "30 do 05"
   const regDiaMesExt = /^(\d{1,2})$/;
   if (regDiaMesExt.test(token) && tokenNext) {
     const tn = tokenNext.toLowerCase().replace(/^de\s+|^do\s+/, '');
@@ -326,7 +447,6 @@ async function handleLancamento(chatId, text, username, tipo) {
   const mesAno = calcularMesAno(p.dataGasto);
   const dadosBase = { ...p, username, tipo, registradoEm, mesAno };
 
-  // Verifica duplicata
   const duplicata = await verificarDuplicata(p.valor, p.descricao);
   if (duplicata) {
     pendentes[chatId] = { dados: dadosBase };
@@ -355,7 +475,6 @@ async function salvarLancamento(chatId, d) {
   const numParcelas = parseInt(d.parcelas) || 1;
 
   if (numParcelas > 1) {
-    // Lança cada parcela
     let linhas = [];
     for (let i = 0; i < numParcelas; i++) {
       const dataParc = somarMeses(d.dataGasto, i);
@@ -378,19 +497,23 @@ async function salvarLancamento(chatId, d) {
   } else {
     const linha = await appendToSheet(d.dataGasto, d.descricao, d.valor, d.categoria, d.username, d.tipo, d.formaPgto, '', d.observacao, d.mesAno, d.registradoEm);
     const emoji = d.tipo === 'Saída' ? '💸' : '💰';
-    await sendMessage(chatId,
-      `${emoji} *${d.tipo} registrada!*\n` +
-      `📅 Data: ${d.dataGasto}\n` +
-      `📝 Descrição: ${d.descricao}\n` +
-      `💵 Valor: R$ ${parseFloat(d.valor).toFixed(2)}\n` +
-      `🏷️ Categoria: ${d.categoria}\n` +
-      `💳 Forma: ${d.formaPgto || 'Não informada'}\n` +
-      (d.observacao ? `📌 Obs: ${d.observacao}\n` : '') +
-      `👤 Por: ${d.username}\n` +
-      `📌 Linha: #${linha}\n\n` +
-      `_editar ${linha} novo-valor descrição categoria_\n` +
-      `_excluir ${linha}_`
-    );
+
+    // Monta mensagem base
+    let msg =
+      `${emoji} *Lançado!* ${d.descricao} — R$ ${parseFloat(d.valor).toFixed(2)}\n` +
+      `📅 ${d.dataGasto} | 🏷️ ${d.categoria} | 💳 ${d.formaPgto || 'Não informada'}\n` +
+      (d.observacao ? `📌 ${d.observacao}\n` : '') +
+      `👤 ${d.username} | 📌 Linha #${linha}\n`;
+
+    // Adiciona info da meta se houver (apenas para saídas de categorias com meta)
+    if (d.tipo === 'Saída') {
+      const msgMeta = await getMensagemMeta(d.categoria, d.valor);
+      if (msgMeta) msg += `\n${msgMeta}`;
+    }
+
+    msg += `\n\n_editar ${linha} novo-valor descrição_\n_excluir ${linha}_`;
+
+    await sendMessage(chatId, msg);
   }
 }
 
@@ -420,7 +543,6 @@ async function handleApagar(chatId, text, username) {
 
   const linha = await appendToSheet(dataHoje, descricao, valor, 'Casa', username, 'A Pagar', '', '', '', mesAno, registradoEm);
 
-  // Cria evento no Google Calendar
   let calendarMsg = '';
   try {
     await criarEventoCalendar(descricao, valor, dataVenc, vencStr);
@@ -460,7 +582,6 @@ async function handleEditar(chatId, text, username) {
     return;
   }
 
-  // Bug 4 fix: verifica se o segundo argumento é realmente um número (valor)
   const valorTentativa = parseFloat((partes[1] || '').replace(',', '.'));
   if (isNaN(valorTentativa)) {
     await sendMessage(chatId,
@@ -471,25 +592,24 @@ async function handleEditar(chatId, text, username) {
     return;
   }
 
-  const valor      = valorTentativa;
-  const descricao  = capitalizar(partes[2] || 'Sem descrição');
+  const valor       = valorTentativa;
+  const descricao   = capitalizar(partes[2] || 'Sem descrição');
   const catDigitada = partes.slice(3).join(' ') || '';
-  const dataHoje   = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  const dataHoje    = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
   const registradoEm = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
-  // Bug 3 fix: lê a linha existente para descobrir o tipo (Entrada ou Saída)
   let tipoExistente = 'Saída';
   try {
     const rows = await getSheetRows();
-    const linhaIdx = linhaNum - 1; // planilha é 1-based, array é 0-based
+    const linhaIdx = linhaNum - 1;
     if (rows[linhaIdx] && rows[linhaIdx][5]) {
       tipoExistente = rows[linhaIdx][5];
     }
-  } catch(e) { /* mantém 'Saída' como fallback */ }
+  } catch(e) {}
 
   const categoria = encontrarCategoria(catDigitada, tipoExistente) ||
     (tipoExistente === 'Entrada' ? 'Outras entradas' : 'Outros');
-  const mesAno    = calcularMesAno(dataHoje);
+  const mesAno = calcularMesAno(dataHoje);
 
   await editarLinha(linhaNum, dataHoje, descricao, valor, categoria, username, tipoExistente, '', '', '', mesAno, registradoEm);
 
@@ -722,7 +842,6 @@ async function criarEventoCalendar(descricao, valor, dataVenc, dataStr) {
     scopes: ['https://www.googleapis.com/auth/calendar'],
   });
   const calendar = google.calendar({ version: 'v3', auth });
-
   const dataInicio = dataVenc.toISOString().split('T')[0];
 
   await calendar.events.insert({
@@ -735,9 +854,9 @@ async function criarEventoCalendar(descricao, valor, dataVenc, dataStr) {
       reminders: {
         useDefault: false,
         overrides: [
-          { method: 'popup', minutes: 3 * 24 * 60 },  // 3 dias antes
-          { method: 'popup', minutes: 24 * 60 },       // 1 dia antes
-          { method: 'popup', minutes: 0 },             // no dia
+          { method: 'popup', minutes: 3 * 24 * 60 },
+          { method: 'popup', minutes: 24 * 60 },
+          { method: 'popup', minutes: 0 },
         ]
       }
     }
