@@ -44,14 +44,14 @@ app.get('/', (req, res) => res.send('Bot Financeiro Casa rodando!'));
 //  HANDLER PRINCIPAL
 // ============================================================
 async function handleUpdate(update) {
-  const message = update.message || update.edited_message;
-  if (!message) return;
-
-  // Callback de botões inline
+  // Callback de botões inline — deve ser verificado ANTES de ler update.message
   if (update.callback_query) {
     await handleCallback(update.callback_query);
     return;
   }
+
+  const message = update.message || update.edited_message;
+  if (!message) return;
 
   const chatId    = message.chat.id;
   const username  = message.from.username || message.from.first_name || 'desconhecido';
@@ -75,7 +75,8 @@ async function handleUpdate(update) {
   if (textLower.startsWith('/apagar')    || textLower.startsWith('apagar'))     { await handleApagar(chatId, text, username); return; }
   if (textLower.startsWith('/editar')    || textLower.startsWith('editar'))     { await handleEditar(chatId, text, username); return; }
   if (textLower.startsWith('/excluir')   || textLower.startsWith('excluir'))    { await handleExcluir(chatId, text); return; }
-  if (textLower.startsWith('/resumo')    || textLower.startsWith('resumo'))     { await handleResumo(chatId); return; }
+  if (textLower.startsWith('/resumo')    || textLower.startsWith('resumo') ||
+      textLower.startsWith('/saldo')     || textLower.startsWith('saldo'))      { await handleResumo(chatId); return; }
   if (textLower.startsWith('/ultimos')   || textLower.startsWith('ultimos'))    { await handleUltimos(chatId); return; }
   if (textLower.startsWith('/categorias')|| textLower.startsWith('categorias')) { await handleCategorias(chatId); return; }
   if (textLower.startsWith('/menu')      || textLower.startsWith('menu') ||
@@ -447,24 +448,49 @@ async function handleEditar(chatId, text, username) {
   const semComando = text.replace(/^\/?editar\s*/i, '').trim();
   const partes     = semComando.split(' ');
 
-  if (partes.length < 3) {
+  if (partes.length < 2) {
     await sendMessage(chatId, '⚠️ Use: editar linha valor descrição categoria\nEx: editar 5 65,00 mercado Alimentação');
     return;
   }
 
-  const linhaNum  = parseInt(partes[0]);
-  const valor     = parseFloat(partes[1].replace(',', '.'));
-  const descricao = capitalizar(partes[2]);
-  const catDigitada = partes[3] || '';
-  const dataHoje  = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  const linhaNum = parseInt(partes[0]);
+  if (isNaN(linhaNum)) {
+    await sendMessage(chatId, '⚠️ Número de linha inválido.\nEx: editar 5 65,00 mercado Alimentação');
+    return;
+  }
+
+  // Bug 4 fix: verifica se o segundo argumento é realmente um número (valor)
+  const valorTentativa = parseFloat((partes[1] || '').replace(',', '.'));
+  if (isNaN(valorTentativa)) {
+    await sendMessage(chatId,
+      `⚠️ Valor não encontrado ou inválido.\n` +
+      `Use: editar ${linhaNum} *valor* descrição categoria\n` +
+      `Ex: editar ${linhaNum} 65,00 mercado Alimentação`
+    );
+    return;
+  }
+
+  const valor      = valorTentativa;
+  const descricao  = capitalizar(partes[2] || 'Sem descrição');
+  const catDigitada = partes.slice(3).join(' ') || '';
+  const dataHoje   = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
   const registradoEm = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
-  if (isNaN(linhaNum) || isNaN(valor)) { await sendMessage(chatId, '⚠️ Linha ou valor inválido.'); return; }
+  // Bug 3 fix: lê a linha existente para descobrir o tipo (Entrada ou Saída)
+  let tipoExistente = 'Saída';
+  try {
+    const rows = await getSheetRows();
+    const linhaIdx = linhaNum - 1; // planilha é 1-based, array é 0-based
+    if (rows[linhaIdx] && rows[linhaIdx][5]) {
+      tipoExistente = rows[linhaIdx][5];
+    }
+  } catch(e) { /* mantém 'Saída' como fallback */ }
 
-  const categoria = encontrarCategoria(catDigitada, 'Saída') || 'Outros';
+  const categoria = encontrarCategoria(catDigitada, tipoExistente) ||
+    (tipoExistente === 'Entrada' ? 'Outras entradas' : 'Outros');
   const mesAno    = calcularMesAno(dataHoje);
 
-  await editarLinha(linhaNum, dataHoje, descricao, valor, categoria, username, 'Saída', '', '', '', mesAno, registradoEm);
+  await editarLinha(linhaNum, dataHoje, descricao, valor, categoria, username, tipoExistente, '', '', '', mesAno, registradoEm);
 
   await sendMessage(chatId,
     `✏️ *Linha #${linhaNum} editada!*\n` +
