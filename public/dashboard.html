@@ -21,232 +21,82 @@
     --saida: #f06080;
     --pagar: #f0c060;
   }
-
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; min-height: 100vh; font-size: 14px; }
 
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'DM Sans', sans-serif;
-    min-height: 100vh;
-    font-size: 14px;
-  }
-
-  /* HEADER */
   header {
     padding: 28px 32px 20px;
     border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 16px;
-    position: sticky;
-    top: 0;
-    background: var(--bg);
-    z-index: 100;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 16px;
+    position: sticky; top: 0; background: var(--bg); z-index: 100;
   }
-
-  .logo {
-    font-family: 'DM Serif Display', serif;
-    font-size: 22px;
-    letter-spacing: -0.5px;
-  }
+  .logo { font-family: 'DM Serif Display', serif; font-size: 22px; letter-spacing: -0.5px; }
   .logo span { color: var(--accent); }
-
-  .header-controls {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-    flex-wrap: wrap;
-  }
-
+  .header-controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   select, button {
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    color: var(--text);
-    padding: 8px 14px;
-    border-radius: 8px;
-    font-family: 'DM Sans', sans-serif;
-    font-size: 13px;
-    cursor: pointer;
-    transition: all 0.15s;
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    padding: 8px 14px; border-radius: 8px; font-family: 'DM Sans', sans-serif;
+    font-size: 13px; cursor: pointer; transition: all 0.15s;
   }
   select:hover, button:hover { border-color: var(--accent); color: var(--accent); }
-
-  .btn-refresh {
-    background: var(--accent);
-    color: #0f0f13;
-    font-weight: 600;
-    border: none;
-  }
+  .btn-refresh { background: var(--accent); color: #0f0f13; font-weight: 600; border: none; }
   .btn-refresh:hover { background: #d4f570; color: #0f0f13; }
 
-  /* MAIN */
   main { padding: 28px 32px; max-width: 1400px; margin: 0 auto; }
 
-  /* STATUS */
-  #status-bar {
-    text-align: center;
-    padding: 40px;
-    color: var(--text2);
-    font-size: 15px;
-  }
+  #status-bar { text-align: center; padding: 40px; color: var(--text2); font-size: 15px; }
   .spinner {
-    width: 32px; height: 32px;
-    border: 3px solid var(--border);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    margin: 0 auto 16px;
+    width: 32px; height: 32px; border: 3px solid var(--border);
+    border-top-color: var(--accent); border-radius: 50%;
+    animation: spin 0.8s linear infinite; margin: 0 auto 16px;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* CARDS TOPO */
-  .cards-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 16px;
-    margin-bottom: 28px;
-  }
-
+  .cards-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 28px; }
   .card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 20px;
-    position: relative;
-    overflow: hidden;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 20px; position: relative; overflow: hidden;
     transition: transform 0.2s, border-color 0.2s;
   }
   .card:hover { transform: translateY(-2px); border-color: var(--accent); }
-
-  .card::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 3px;
-    border-radius: 14px 14px 0 0;
-  }
+  .card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; border-radius: 14px 14px 0 0; }
   .card.verde::before { background: var(--entrada); }
   .card.vermelho::before { background: var(--saida); }
   .card.amarelo::before { background: var(--pagar); }
   .card.azul::before { background: var(--accent2); }
   .card.roxo::before { background: var(--accent3); }
-
-  .card-label {
-    font-size: 11px;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    color: var(--text2);
-    margin-bottom: 10px;
-  }
-  .card-value {
-    font-family: 'DM Serif Display', serif;
-    font-size: 28px;
-    line-height: 1;
-    margin-bottom: 6px;
-  }
+  .card-label { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 1px; color: var(--text2); margin-bottom: 10px; }
+  .card-value { font-family: 'DM Serif Display', serif; font-size: 28px; line-height: 1; margin-bottom: 6px; }
   .card-sub { font-size: 12px; color: var(--text2); }
   .positivo { color: var(--entrada); }
   .negativo { color: var(--saida); }
   .aviso { color: var(--pagar); }
 
-  /* CHARTS GRID */
-  .charts-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
-    margin-bottom: 28px;
-  }
-
-  .chart-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 22px;
-  }
+  .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 28px; }
+  .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 22px; }
   .chart-card.wide { grid-column: 1 / -1; }
-
-  .chart-title {
-    font-size: 12px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    color: var(--text2);
-    margin-bottom: 18px;
-  }
-
-  .chart-wrap {
-    position: relative;
-    height: 240px;
-  }
+  .chart-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--text2); margin-bottom: 18px; }
+  .chart-wrap { position: relative; height: 240px; }
   .chart-wrap.tall { height: 300px; }
 
-  /* TABELAS */
-  .table-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
-    margin-bottom: 28px;
-  }
-
-  .table-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 22px;
-  }
+  .table-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 28px; }
+  .table-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 22px; }
   .table-card.wide { grid-column: 1 / -1; }
 
-  table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-  th {
-    font-size: 11px;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    color: var(--text2);
-    padding: 0 0 10px;
-    text-align: left;
-    border-bottom: 1px solid var(--border);
-  }
-  td {
-    padding: 9px 0;
-    border-bottom: 1px solid var(--border);
-    font-size: 13px;
-  }
+  table { width: 100%; border-collapse: collapse; }
+  th { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text2); padding: 0 0 10px; text-align: left; border-bottom: 1px solid var(--border); }
+  td { padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
   tr:last-child td { border-bottom: none; }
 
-  .badge {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 20px;
-    font-size: 11px;
-    font-weight: 500;
-  }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 500; }
   .badge-entrada { background: #60f0a820; color: var(--entrada); }
   .badge-saida { background: #f0608020; color: var(--saida); }
   .badge-pagar { background: #f0c06020; color: var(--pagar); }
 
-  /* VENCIMENTOS */
-  .venc-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 10px 0;
-    border-bottom: 1px solid var(--border);
-  }
+  .venc-item { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
   .venc-item:last-child { border-bottom: none; }
-  .venc-dias {
-    font-family: 'DM Serif Display', serif;
-    font-size: 22px;
-    min-width: 40px;
-    text-align: center;
-  }
+  .venc-dias { font-family: 'DM Serif Display', serif; font-size: 22px; min-width: 40px; text-align: center; }
   .venc-dias.urgente { color: var(--saida); }
   .venc-dias.proximo { color: var(--pagar); }
   .venc-dias.ok { color: var(--entrada); }
@@ -255,58 +105,32 @@
   .venc-data { font-size: 11px; color: var(--text2); margin-top: 2px; }
   .venc-valor { font-weight: 600; font-size: 14px; }
 
-  /* BARRA DE CATEGORIAS */
   .cat-bar-item { margin-bottom: 12px; }
-  .cat-bar-header {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 5px;
-    font-size: 13px;
-  }
-  .cat-bar-track {
-    height: 6px;
-    background: var(--border);
-    border-radius: 3px;
-    overflow: hidden;
-  }
-  .cat-bar-fill {
-    height: 100%;
-    border-radius: 3px;
-    transition: width 0.8s ease;
-  }
+  .cat-bar-header { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 13px; }
+  .cat-bar-track { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  .cat-bar-fill { height: 100%; border-radius: 3px; transition: width 0.8s ease; }
 
-  /* COMPARATIVO MESES */
-  .comp-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 8px 0;
-    border-bottom: 1px solid var(--border);
-  }
-  .comp-row:last-child { border-bottom: none; }
-  .comp-mes { min-width: 70px; font-size: 12px; color: var(--text2); font-weight: 500; text-transform: uppercase; }
-  .comp-bars { flex: 1; display: flex; flex-direction: column; gap: 3px; }
-  .comp-bar-row { display: flex; align-items: center; gap: 6px; }
-  .comp-bar {
-    height: 8px;
-    border-radius: 4px;
-    transition: width 0.8s ease;
-  }
-  .comp-val { font-size: 11px; color: var(--text2); white-space: nowrap; }
+  /* METAS */
+  .meta-item { margin-bottom: 18px; }
+  .meta-item:last-child { margin-bottom: 0; }
+  .meta-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+  .meta-nome { font-weight: 600; font-size: 13px; }
+  .meta-tipo { font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text2); margin-top: 2px; }
+  .meta-valores { text-align: right; font-size: 12px; }
+  .meta-gasto { font-weight: 600; font-size: 14px; }
+  .meta-restante { color: var(--text2); font-size: 11px; margin-top: 1px; }
+  .meta-track { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; margin-bottom: 4px; }
+  .meta-fill { height: 100%; border-radius: 4px; transition: width 1s ease; }
+  .meta-fill.ok { background: var(--entrada); }
+  .meta-fill.alerta { background: var(--pagar); }
+  .meta-fill.ultrapassado { background: var(--saida); }
+  .meta-fill.investimento { background: var(--accent2); }
+  .meta-pct { font-size: 11px; color: var(--text2); }
+  .meta-aviso { font-size: 11px; color: var(--saida); font-weight: 600; margin-top: 3px; }
+  .meta-ok { font-size: 11px; color: var(--entrada); font-weight: 600; margin-top: 3px; }
 
-  /* EMPTY */
   .empty { text-align: center; padding: 32px; color: var(--text2); font-size: 13px; }
-
-  /* ERRO */
-  .erro-box {
-    background: #f0608015;
-    border: 1px solid #f0608040;
-    border-radius: 12px;
-    padding: 20px 24px;
-    margin-bottom: 20px;
-    font-size: 13px;
-    color: var(--saida);
-  }
+  .erro-box { background: #f0608015; border: 1px solid #f0608040; border-radius: 12px; padding: 20px 24px; margin-bottom: 20px; font-size: 13px; color: var(--saida); }
 
   @media (max-width: 768px) {
     header { padding: 16px; }
@@ -322,66 +146,58 @@
 <header>
   <div class="logo">💰 Financeiro<span>Casa</span></div>
   <div class="header-controls">
-    <select id="sel-mes">
-      <option value="todos">Todos os meses</option>
-    </select>
-    <select id="sel-categoria">
-      <option value="todas">Todas categorias</option>
-    </select>
+    <select id="sel-mes"><option value="todos">Todos os meses</option></select>
+    <select id="sel-categoria"><option value="todas">Todas categorias</option></select>
     <button class="btn-refresh" onclick="carregarDados()">↻ Atualizar</button>
   </div>
 </header>
 
 <main>
-  <div id="status-bar">
-    <div class="spinner"></div>
-    Carregando dados da planilha…
-  </div>
+  <div id="status-bar"><div class="spinner"></div>Carregando dados da planilha…</div>
   <div id="dashboard" style="display:none"></div>
 </main>
 
 <script>
-// ─── CONFIG ─────────────────────────────────────────────────────────────────
-// A URL abaixo usa a API pública do Google Sheets (CSV export).
-// A planilha PRECISA estar com acesso "Qualquer pessoa com o link pode visualizar".
-const SHEET_ID = '1R0w5a29N-G3SMs-uhgHMvO1RQvABnrYaeGPnCc3qmug';
-const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=P%C3%A1gina1`;
+const SHEET_ID   = '1R0w5a29N-G3SMs-uhgHMvO1RQvABnrYaeGPnCc3qmug';
+const SHEET_URL  = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=P%C3%A1gina1`;
+const METAS_URL  = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Metas`;
 
-// ─── ESTADO ──────────────────────────────────────────────────────────────────
 let dadosOriginais = [];
+let metasOriginais = {};
 let chartInstances = {};
 
-// ─── PALETA ──────────────────────────────────────────────────────────────────
-const CORES = [
-  '#c8f060','#60c8f0','#f060a8','#60f0a8','#f0c060',
-  '#a860f0','#f08060','#60f0e0','#f0f060','#6080f0'
-];
+const CORES = ['#c8f060','#60c8f0','#f060a8','#60f0a8','#f0c060','#a860f0','#f08060','#60f0e0','#f0f060','#6080f0'];
 
-// ─── MAIN ─────────────────────────────────────────────────────────────────────
 async function carregarDados() {
   document.getElementById('status-bar').style.display = 'block';
   document.getElementById('status-bar').innerHTML = '<div class="spinner"></div>Carregando dados da planilha…';
   document.getElementById('dashboard').style.display = 'none';
 
   try {
-    const resp = await fetch(SHEET_URL + '&t=' + Date.now());
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const csv  = await resp.text();
-    dadosOriginais = parseCSV(csv);
+    const [respDados, respMetas] = await Promise.all([
+      fetch(SHEET_URL + '&t=' + Date.now()),
+      fetch(METAS_URL + '&t=' + Date.now())
+    ]);
+    if (!respDados.ok) throw new Error('HTTP ' + respDados.status);
+    const csvDados = await respDados.text();
+    dadosOriginais = parseCSV(csvDados);
+
+    if (respMetas.ok) {
+      const csvMetas = await respMetas.text();
+      metasOriginais = parseMetas(csvMetas);
+    }
+
     popularFiltros();
     renderDashboard();
   } catch(err) {
     document.getElementById('status-bar').innerHTML =
-      `<div class="erro-box">
-        ⚠️ <strong>Não foi possível carregar os dados.</strong><br><br>
-        Certifique-se que a planilha está pública:<br>
-        Planilha → Compartilhar → "Qualquer pessoa com o link" → Leitor<br><br>
-        <small style="color:#888">${err.message}</small>
-      </div>`;
+      `<div class="erro-box">⚠️ <strong>Não foi possível carregar os dados.</strong><br><br>
+      Certifique-se que a planilha está pública:<br>
+      Planilha → Compartilhar → "Qualquer pessoa com o link" → Leitor<br><br>
+      <small style="color:#888">${err.message}</small></div>`;
   }
 }
 
-// ─── CSV PARSER ───────────────────────────────────────────────────────────────
 function parseCSV(csv) {
   const linhas = csv.trim().split('\n');
   const dados = [];
@@ -389,19 +205,32 @@ function parseCSV(csv) {
     const cols = parseLinha(linhas[i]);
     if (!cols[0] || cols[0].trim() === '') continue;
     dados.push({
-      data:       cols[0]?.replace(/"/g,'').trim() || '',
-      descricao:  cols[1]?.replace(/"/g,'').trim() || '',
-      valor:      parseFloat((cols[2]?.replace(/"/g,'').replace(',','.') || '0')) || 0,
-      categoria:  cols[3]?.replace(/"/g,'').trim() || 'Outros',
-      quem:       cols[4]?.replace(/"/g,'').trim() || '',
-      tipo:       cols[5]?.replace(/"/g,'').trim() || 'Saída',
-      forma:      cols[6]?.replace(/"/g,'').trim() || '',
-      parcelas:   cols[7]?.replace(/"/g,'').trim() || '',
-      obs:        cols[8]?.replace(/"/g,'').trim() || '',
-      mesAno:     cols[9]?.replace(/"/g,'').trim() || '',
+      data:      cols[0]?.replace(/"/g,'').trim() || '',
+      descricao: cols[1]?.replace(/"/g,'').trim() || '',
+      valor:     parseFloat((cols[2]?.replace(/"/g,'').replace(',','.') || '0')) || 0,
+      categoria: cols[3]?.replace(/"/g,'').trim() || 'Outros',
+      quem:      cols[4]?.replace(/"/g,'').trim() || '',
+      tipo:      cols[5]?.replace(/"/g,'').trim() || 'Saída',
+      forma:     cols[6]?.replace(/"/g,'').trim() || '',
+      parcelas:  cols[7]?.replace(/"/g,'').trim() || '',
+      obs:       cols[8]?.replace(/"/g,'').trim() || '',
+      mesAno:    cols[9]?.replace(/"/g,'').trim() || '',
     });
   }
   return dados;
+}
+
+function parseMetas(csv) {
+  const linhas = csv.trim().split('\n');
+  const metas = {};
+  for (let i = 1; i < linhas.length; i++) {
+    const cols = parseLinha(linhas[i]);
+    const cat  = (cols[0] || '').replace(/"/g,'').trim();
+    const meta = parseFloat((cols[1] || '0').replace(/"/g,'').replace(',','.')) || 0;
+    const tipo = (cols[2] || 'Gasto').replace(/"/g,'').trim();
+    if (cat && meta > 0) metas[cat] = { meta, tipo };
+  }
+  return metas;
 }
 
 function parseLinha(linha) {
@@ -417,7 +246,6 @@ function parseLinha(linha) {
   return result;
 }
 
-// ─── FILTROS ──────────────────────────────────────────────────────────────────
 function popularFiltros() {
   const meses = [...new Set(dadosOriginais.map(d => d.mesAno).filter(Boolean))].sort();
   const cats  = [...new Set(dadosOriginais.map(d => d.categoria).filter(Boolean))].sort();
@@ -426,8 +254,7 @@ function popularFiltros() {
   selMes.innerHTML = '<option value="todos">Todos os meses</option>';
   meses.forEach(m => {
     const opt = document.createElement('option');
-    opt.value = m;
-    opt.textContent = formatarMesAno(m);
+    opt.value = m; opt.textContent = formatarMesAno(m);
     if (m === mesAtual()) opt.selected = true;
     selMes.appendChild(opt);
   });
@@ -466,23 +293,28 @@ function formatarMesAno(str) {
   return `${meses[parseInt(m)] || m}/${a}`;
 }
 
-// ─── RENDER PRINCIPAL ─────────────────────────────────────────────────────────
 function renderDashboard() {
-  const dados = filtrarDados();
+  const dados  = filtrarDados();
+  const mesSel = document.getElementById('sel-mes').value;
   destroyCharts();
 
-  const entradas  = dados.filter(d => d.tipo === 'Entrada');
-  const saidas    = dados.filter(d => d.tipo === 'Saída');
-  const aPagar    = dados.filter(d => d.tipo === 'A Pagar');
+  const entradas = dados.filter(d => d.tipo === 'Entrada');
+  const saidas   = dados.filter(d => d.tipo === 'Saída');
+  const aPagar   = dados.filter(d => d.tipo === 'A Pagar');
 
-  const totEnt = entradas.reduce((s,d)  => s + d.valor, 0);
-  const totSai = saidas.reduce((s,d)    => s + d.valor, 0);
-  const totPag = aPagar.reduce((s,d)    => s + d.valor, 0);
+  const totEnt = entradas.reduce((s,d) => s + d.valor, 0);
+  const totSai = saidas.reduce((s,d)   => s + d.valor, 0);
+  const totPag = aPagar.reduce((s,d)   => s + d.valor, 0);
   const saldo  = totEnt - totSai;
+
+  // Gastos por categoria no mês selecionado (para metas)
+  const gastosPorCat = {};
+  saidas.forEach(d => { gastosPorCat[d.categoria] = (gastosPorCat[d.categoria] || 0) + d.valor; });
 
   const html = `
     ${renderCards(totEnt, totSai, totPag, saldo, saidas)}
-    ${renderChartsGrid(dados, saidas, entradas)}
+    ${renderMetas(gastosPorCat, mesSel)}
+    ${renderChartsGrid()}
     ${renderTablesGrid(saidas, aPagar, dados)}
   `;
 
@@ -491,7 +323,6 @@ function renderDashboard() {
   dash.style.display = 'block';
   document.getElementById('status-bar').style.display = 'none';
 
-  // Renderiza charts após DOM estar pronto
   setTimeout(() => {
     renderChartBarras(dados);
     renderChartPizza(saidas);
@@ -500,11 +331,9 @@ function renderDashboard() {
   }, 50);
 }
 
-// ─── CARDS ────────────────────────────────────────────────────────────────────
 function renderCards(totEnt, totSai, totPag, saldo, saidas) {
   const topCat = getTopCategoria(saidas);
   const saldoClass = saldo >= 0 ? 'positivo' : 'negativo';
-
   return `
   <div class="cards-grid">
     <div class="card verde">
@@ -542,8 +371,69 @@ function getTopCategoria(saidas) {
   return sorted.length ? { nome: sorted[0][0], valor: sorted[0][1] } : { nome: '—', valor: 0 };
 }
 
-// ─── CHARTS GRID ─────────────────────────────────────────────────────────────
-function renderChartsGrid(dados, saidas, entradas) {
+// ─── METAS ────────────────────────────────────────────────────────────────────
+function renderMetas(gastosPorCat, mesSel) {
+  if (Object.keys(metasOriginais).length === 0) return '';
+
+  const items = Object.entries(metasOriginais).map(([cat, { meta, tipo }]) => {
+    const gasto    = gastosPorCat[cat] || 0;
+    const restante = meta - gasto;
+    const pct      = Math.min(100, (gasto / meta * 100));
+    const pctLabel = pct.toFixed(0) + '%';
+
+    let fillClass, statusHtml;
+    if (tipo === 'Investimento') {
+      fillClass  = 'investimento';
+      statusHtml = gasto >= meta
+        ? `<div class="meta-ok">✓ Meta atingida!</div>`
+        : `<div class="meta-pct">Faltam R$ ${fmt(restante)} para a meta</div>`;
+    } else {
+      if (pct >= 100) {
+        fillClass  = 'ultrapassado';
+        statusHtml = `<div class="meta-aviso">⚠ Ultrapassou R$ ${fmt(Math.abs(restante))}</div>`;
+      } else if (pct >= 80) {
+        fillClass  = 'alerta';
+        statusHtml = `<div class="meta-pct" style="color:var(--pagar)">Saldo: R$ ${fmt(restante)}</div>`;
+      } else {
+        fillClass  = 'ok';
+        statusHtml = `<div class="meta-pct">Saldo: R$ ${fmt(restante)}</div>`;
+      }
+    }
+
+    return `
+    <div class="meta-item">
+      <div class="meta-header">
+        <div>
+          <div class="meta-nome">${cat}</div>
+          <div class="meta-tipo">${tipo}</div>
+        </div>
+        <div class="meta-valores">
+          <div class="meta-gasto ${pct >= 100 ? 'negativo' : pct >= 80 ? 'aviso' : 'positivo'}">R$ ${fmt(gasto)}</div>
+          <div class="meta-restante">meta R$ ${fmt(meta)}</div>
+        </div>
+      </div>
+      <div class="meta-track">
+        <div class="meta-fill ${fillClass}" style="width:${pct.toFixed(1)}%"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>${statusHtml}</div>
+        <div class="meta-pct">${pctLabel}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  const labelMes = mesSel === 'todos' ? 'período selecionado' : formatarMesAno(mesSel);
+
+  return `
+  <div class="chart-card wide" style="margin-bottom:20px">
+    <div class="chart-title">🎯 Metas — ${labelMes}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:24px 40px">
+      ${items}
+    </div>
+  </div>`;
+}
+
+function renderChartsGrid() {
   return `
   <div class="charts-grid">
     <div class="chart-card wide">
@@ -565,7 +455,6 @@ function renderChartsGrid(dados, saidas, entradas) {
   </div>`;
 }
 
-// ─── TABLES GRID ─────────────────────────────────────────────────────────────
 function renderTablesGrid(saidas, aPagar, dados) {
   return `
   <div class="table-grid">
@@ -603,9 +492,7 @@ function renderVencimentos(aPagar) {
   const hoje = new Date();
   const items = aPagar.map(d => {
     const partes = d.data.split('/');
-    const dt = partes.length >= 3
-      ? new Date(parseInt(partes[2]), parseInt(partes[1])-1, parseInt(partes[0]))
-      : null;
+    const dt = partes.length >= 3 ? new Date(parseInt(partes[2]), parseInt(partes[1])-1, parseInt(partes[0])) : null;
     const dias = dt ? Math.ceil((dt - hoje) / 86400000) : null;
     return { ...d, dt, dias };
   }).sort((a,b) => (a.dias||999) - (b.dias||999)).slice(0, 8);
@@ -614,8 +501,8 @@ function renderVencimentos(aPagar) {
     let diasClass = 'ok', diasLabel = item.dias !== null ? `${item.dias}d` : '?';
     if (item.dias !== null) {
       if (item.dias < 0) { diasClass = 'urgente'; diasLabel = 'Venc.'; }
-      else if (item.dias <= 3) { diasClass = 'urgente'; }
-      else if (item.dias <= 7) { diasClass = 'proximo'; }
+      else if (item.dias <= 3) diasClass = 'urgente';
+      else if (item.dias <= 7) diasClass = 'proximo';
     }
     return `
     <div class="venc-item">
@@ -659,10 +546,8 @@ function renderUltimosLancamentos(dados) {
   </div>`;
 }
 
-// ─── CHARTS ───────────────────────────────────────────────────────────────────
 const chartOpts = {
-  responsive: true,
-  maintainAspectRatio: false,
+  responsive: true, maintainAspectRatio: false,
   plugins: { legend: { labels: { color: '#8888a8', font: { family: 'DM Sans', size: 12 } } } },
   scales: {
     x: { ticks: { color: '#8888a8', font: { family: 'DM Sans' } }, grid: { color: '#2a2a38' } },
@@ -678,21 +563,16 @@ function renderChartBarras(dados) {
     if (d.tipo === 'Entrada') porMes[d.mesAno].ent += d.valor;
     else if (d.tipo === 'Saída') porMes[d.mesAno].sai += d.valor;
   });
-
   const labels = Object.keys(porMes).sort().map(formatarMesAno);
   const ents   = Object.keys(porMes).sort().map(k => porMes[k].ent);
   const sais   = Object.keys(porMes).sort().map(k => porMes[k].sai);
-
   const ctx = document.getElementById('chart-barras').getContext('2d');
   chartInstances['barras'] = new Chart(ctx, {
     type: 'bar',
-    data: {
-      labels,
-      datasets: [
-        { label: 'Entradas', data: ents, backgroundColor: '#60f0a840', borderColor: '#60f0a8', borderWidth: 2, borderRadius: 6 },
-        { label: 'Saídas',   data: sais, backgroundColor: '#f0608040', borderColor: '#f06080', borderWidth: 2, borderRadius: 6 },
-      ]
-    },
+    data: { labels, datasets: [
+      { label: 'Entradas', data: ents, backgroundColor: '#60f0a840', borderColor: '#60f0a8', borderWidth: 2, borderRadius: 6 },
+      { label: 'Saídas',   data: sais, backgroundColor: '#f0608040', borderColor: '#f06080', borderWidth: 2, borderRadius: 6 },
+    ]},
     options: { ...chartOpts, plugins: { ...chartOpts.plugins, tooltip: { callbacks: { label: ctx => `R$ ${fmt(ctx.raw)}` } } } }
   });
 }
@@ -701,26 +581,17 @@ function renderChartPizza(saidas) {
   const por = {};
   saidas.forEach(d => { por[d.categoria] = (por[d.categoria]||0) + d.valor; });
   const sorted = Object.entries(por).sort((a,b)=>b[1]-a[1]);
-
   const ctx = document.getElementById('chart-pizza').getContext('2d');
   chartInstances['pizza'] = new Chart(ctx, {
     type: 'doughnut',
-    data: {
-      labels: sorted.map(e=>e[0]),
-      datasets: [{ data: sorted.map(e=>e[1]), backgroundColor: CORES.map(c=>c+'99'), borderColor: CORES, borderWidth: 2 }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { position: 'right', labels: { color: '#8888a8', font: { family:'DM Sans',size:11 }, boxWidth: 12, padding: 10 } },
-        tooltip: { callbacks: { label: ctx => `R$ ${fmt(ctx.raw)}` } }
-      }
-    }
+    data: { labels: sorted.map(e=>e[0]), datasets: [{ data: sorted.map(e=>e[1]), backgroundColor: CORES.map(c=>c+'99'), borderColor: CORES, borderWidth: 2 }] },
+    options: { responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'right', labels: { color: '#8888a8', font: { family:'DM Sans',size:11 }, boxWidth: 12, padding: 10 } },
+        tooltip: { callbacks: { label: ctx => `R$ ${fmt(ctx.raw)}` } } } }
   });
 }
 
 function renderChartSaldo(todos) {
-  // Agrupa por mês e calcula saldo acumulado
   const porMes = {};
   todos.forEach(d => {
     if (!d.mesAno) return;
@@ -728,55 +599,34 @@ function renderChartSaldo(todos) {
     if (d.tipo === 'Entrada') porMes[d.mesAno] += d.valor;
     else if (d.tipo === 'Saída') porMes[d.mesAno] -= d.valor;
   });
-
-  const meses  = Object.keys(porMes).sort();
+  const meses = Object.keys(porMes).sort();
   const saldos = [];
   let acum = 0;
   meses.forEach(m => { acum += porMes[m]; saldos.push(acum); });
-
   const ctx = document.getElementById('chart-saldo').getContext('2d');
   chartInstances['saldo'] = new Chart(ctx, {
     type: 'line',
-    data: {
-      labels: meses.map(formatarMesAno),
-      datasets: [{
-        label: 'Saldo acumulado',
-        data: saldos,
-        borderColor: '#c8f060',
-        backgroundColor: 'rgba(200,240,96,0.08)',
-        borderWidth: 2.5,
-        pointBackgroundColor: saldos.map(v => v >= 0 ? '#c8f060' : '#f06080'),
-        pointRadius: 5,
-        fill: true,
-        tension: 0.4
-      }]
-    },
+    data: { labels: meses.map(formatarMesAno), datasets: [{
+      label: 'Saldo acumulado', data: saldos,
+      borderColor: '#c8f060', backgroundColor: 'rgba(200,240,96,0.08)',
+      borderWidth: 2.5, pointBackgroundColor: saldos.map(v => v >= 0 ? '#c8f060' : '#f06080'),
+      pointRadius: 5, fill: true, tension: 0.4
+    }]},
     options: { ...chartOpts, plugins: { ...chartOpts.plugins, tooltip: { callbacks: { label: ctx => `R$ ${fmt(ctx.raw)}` } } } }
   });
 }
 
 function renderChartFormas(saidas) {
   const por = {};
-  saidas.forEach(d => {
-    const f = d.forma || 'Não informado';
-    por[f] = (por[f]||0) + d.valor;
-  });
+  saidas.forEach(d => { const f = d.forma || 'Não informado'; por[f] = (por[f]||0) + d.valor; });
   const sorted = Object.entries(por).sort((a,b)=>b[1]-a[1]);
-
   const ctx = document.getElementById('chart-formas').getContext('2d');
   chartInstances['formas'] = new Chart(ctx, {
     type: 'doughnut',
-    data: {
-      labels: sorted.map(e=>e[0]),
-      datasets: [{ data: sorted.map(e=>e[1]), backgroundColor: CORES.slice(2).map(c=>c+'99'), borderColor: CORES.slice(2), borderWidth: 2 }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { position: 'right', labels: { color: '#8888a8', font: { family:'DM Sans',size:11 }, boxWidth: 12, padding: 10 } },
-        tooltip: { callbacks: { label: ctx => `R$ ${fmt(ctx.raw)}` } }
-      }
-    }
+    data: { labels: sorted.map(e=>e[0]), datasets: [{ data: sorted.map(e=>e[1]), backgroundColor: CORES.slice(2).map(c=>c+'99'), borderColor: CORES.slice(2), borderWidth: 2 }] },
+    options: { responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'right', labels: { color: '#8888a8', font: { family:'DM Sans',size:11 }, boxWidth: 12, padding: 10 } },
+        tooltip: { callbacks: { label: ctx => `R$ ${fmt(ctx.raw)}` } } } }
   });
 }
 
@@ -785,12 +635,10 @@ function destroyCharts() {
   chartInstances = {};
 }
 
-// ─── UTILS ────────────────────────────────────────────────────────────────────
 function fmt(n) {
   return Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-// ─── INIT ─────────────────────────────────────────────────────────────────────
 carregarDados();
 </script>
 </body>
