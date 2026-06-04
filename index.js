@@ -156,9 +156,64 @@ async function handleUpdate(update) {
   if (tl.startsWith('/categorias') || tl.startsWith('categorias')) { await handleCategorias(chatId);                          return; }
   if (tl.startsWith('/metas')      || tl.startsWith('metas'))      { await handleMetas(chatId);                               return; }
   if (tl.startsWith('/contas')     || tl.startsWith('contas'))     { await handleContas(chatId);                              return; }
+  if (tl.startsWith('/transferencia') || tl.startsWith('transferencia') ||
+      tl.startsWith('transf'))                                           { await handleTransferencia(chatId, text, username);        return; }
   if (tl.startsWith('/menu')       || tl.startsWith('menu')    ||
       tl.startsWith('/ajuda')      || tl.startsWith('ajuda')   ||
       tl === '/start')                                              { await handleMenu(chatId);                                return; }
+}
+
+// ============================================================
+//  HANDLER — transferência entre contas
+// ============================================================
+async function handleTransferencia(chatId, text, username) {
+  // Formato: transferencia 100 dany jakson  ou  transf 100 jakson dany
+  const semCmd = text.replace(/^\/?transf(?:erencia)?\s*/i,'').trim().split(/\s+/);
+
+  if (semCmd.length < 3) {
+    await sendMessage(chatId,
+      '↔️ *Como registrar transferência:*\n\n' +
+      'transferencia [valor] [conta origem] [conta destino]\n\n' +
+      '*Exemplos:*\n' +
+      '• transferencia 100 dany jakson\n' +
+      '• transferencia 50 jakson dany\n\n' +
+      '*Contas disponíveis:* jakson, dany, neon, carteira'
+    );
+    return;
+  }
+
+  const valor = parseFloat(semCmd[0].replace(',','.'));
+  if (isNaN(valor)) { await sendMessage(chatId,'⚠️ Valor inválido.'); return; }
+
+  const MAPA_CONTAS = {
+    'jakson':'C6 Jakson', 'c6jakson':'C6 Jakson', 'c6j':'C6 Jakson',
+    'dany':'C6 Dany',     'c6dany':'C6 Dany',
+    'neon':'Neon crédito','carteira':'Carteira'
+  };
+
+  const origem  = MAPA_CONTAS[semCmd[1].toLowerCase()];
+  const destino = MAPA_CONTAS[semCmd[2].toLowerCase()];
+
+  if (!origem)  { await sendMessage(chatId, `⚠️ Conta origem não reconhecida: *${semCmd[1]}*\nUse: jakson, dany, neon ou carteira`); return; }
+  if (!destino) { await sendMessage(chatId, `⚠️ Conta destino não reconhecida: *${semCmd[2]}*\nUse: jakson, dany, neon ou carteira`); return; }
+  if (origem === destino) { await sendMessage(chatId, '⚠️ Origem e destino são a mesma conta!'); return; }
+
+  const dataHoje     = new Date().toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});
+  const registradoEm = new Date().toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'});
+  const mesAno       = calcularMesAno(dataHoje);
+  const desc         = `Transferência ${semCmd[1]} → ${semCmd[2]}`;
+
+  // Lança saída da conta origem
+  const linSaida  = await appendToSheet(dataHoje, desc, valor, 'Transferência', username, 'Saída',  '', '', '', mesAno, registradoEm, origem);
+  // Lança entrada na conta destino
+  const linEntrada = await appendToSheet(dataHoje, desc, valor, 'Transferência', username, 'Entrada','', '', '', mesAno, registradoEm, destino);
+
+  await sendMessage(chatId,
+    `↔️ *Transferência registrada!*\n\n` +
+    `💸 Saída: R$ ${fmt(valor)} de *${origem}* (linha #${linSaida})\n` +
+    `💰 Entrada: R$ ${fmt(valor)} em *${destino}* (linha #${linEntrada})\n` +
+    `📅 ${dataHoje} | 👤 ${username}`
+  );
 }
 
 // ============================================================
