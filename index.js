@@ -22,6 +22,81 @@ const CATEGORIAS_ENTRADA = [
   'Freelance Dany','Rendimento','Presente','Outras entradas'
 ];
 const FORMAS_PAGAMENTO = ['pix','debito','crédito','credito','dinheiro','ted','doc'];
+
+// Mapeamento automático descrição → categoria
+const MAPA_DESC_CATEGORIA = {
+  // Alimentação
+  'mercado':'Alimentação','supermercado':'Alimentação','feira':'Alimentação',
+  'fruteira':'Alimentação','padaria':'Alimentação','açougue':'Alimentação',
+  'acougue':'Alimentação','peixaria':'Alimentação','hortifruti':'Alimentação',
+  'restaurante':'Alimentação','lanchonete':'Alimentação','pizza':'Alimentação',
+  'hamburger':'Alimentação','hamburguer':'Alimentação','sushi':'Alimentação',
+  'ifood':'Alimentação','delivery':'Alimentação','cafe':'Alimentação',
+  'café':'Alimentação','doceria':'Alimentação','sorveteria':'Alimentação',
+  'acai':'Alimentação','açaí':'Alimentação','snack':'Alimentação',
+  'conveniencia':'Alimentação','conveniência':'Alimentação',
+  // Casa
+  'aluguel':'Casa','condominio':'Casa','condomínio':'Casa','iptu':'Casa',
+  'luz':'Casa','energia':'Casa','agua':'Casa','água':'Casa','gas':'Casa',
+  'gás':'Casa','internet':'Casa','telefone':'Casa','celular':'Casa',
+  'reforma':'Casa','pintura':'Casa','encanador':'Casa','eletricista':'Casa',
+  'marceneiro':'Casa','limpeza':'Casa','faxina':'Casa','diarista':'Casa',
+  'mobilia':'Casa','móbilia':'Casa','movel':'Casa','móvel':'Casa',
+  'colchao':'Casa','colchão':'Casa','geladeira':'Casa','fogao':'Casa',
+  'fogão':'Casa','microondas':'Casa','maquina':'Casa','máquina':'Casa',
+  // Transporte
+  'gasolina':'Transporte','combustivel':'Transporte','combustível':'Transporte',
+  'etanol':'Transporte','alcool':'Transporte','álcool':'Transporte',
+  'uber':'Transporte','99':'Transporte','taxi':'Transporte','táxi':'Transporte',
+  'onibus':'Transporte','ônibus':'Transporte','metro':'Transporte','metrô':'Transporte',
+  'pedagio':'Transporte','pedágio':'Transporte','estacionamento':'Transporte',
+  'mecanico':'Transporte','mecânico':'Transporte','oficina':'Transporte',
+  'pneu':'Transporte','bateria':'Transporte','revisao':'Transporte',
+  'revisão':'Transporte','seguro-carro':'Transporte','ipva':'Transporte',
+  'carro':'Transporte','moto':'Transporte','autoescola':'Transporte',
+  'espelho':'Transporte','parabrisa':'Transporte','lataria':'Transporte',
+  // Saúde
+  'farmacia':'Saúde','farmácia':'Saúde','remedio':'Saúde','remédio':'Saúde',
+  'medico':'Saúde','médico':'Saúde','consulta':'Saúde','clinica':'Saúde',
+  'clínica':'Saúde','hospital':'Saúde','exame':'Saúde','dentista':'Saúde',
+  'ortodontista':'Saúde','psicólogo':'Saúde','psicologo':'Saúde',
+  'academia':'Saúde','nutricionista':'Saúde','fisioterapia':'Saúde',
+  'plano-saude':'Saúde','unimed':'Saúde','amil':'Saúde','hapvida':'Saúde',
+  'drogaria':'Saúde','suplemento':'Saúde','vitamina':'Saúde',
+  // Educação
+  'escola':'Educação','faculdade':'Educação','universidade':'Educação',
+  'curso':'Educação','livro':'Educação','apostila':'Educação',
+  'material':'Educação','uniforme':'Educação','mensalidade':'Educação',
+  'colegio':'Educação','colégio':'Educação','ingles':'Educação',
+  'inglês':'Educação','idioma':'Educação','udemy':'Educação',
+  // Lazer
+  'cinema':'Lazer','teatro':'Lazer','show':'Lazer','festa':'Lazer',
+  'bar':'Lazer','balada':'Lazer','parque':'Lazer','viagem':'Lazer',
+  'hotel':'Lazer','pousada':'Lazer','airbnb':'Lazer','passeio':'Lazer',
+  'ingresso':'Lazer','jogo':'Lazer','game':'Lazer','steam':'Lazer',
+  'playstation':'Lazer','xbox':'Lazer','nintendo':'Lazer',
+  // Vestuário
+  'roupa':'Vestuário','sapato':'Vestuário','tenis':'Vestuário',
+  'tênis':'Vestuário','calcado':'Vestuário','calçado':'Vestuário',
+  'camisa':'Vestuário','calca':'Vestuário','calça':'Vestuário',
+  'vestido':'Vestuário','bolsa':'Vestuário','mochila':'Vestuário',
+  'cinto':'Vestuário','relogio':'Vestuário','relógio':'Vestuário',
+  'oculos':'Vestuário','óculos':'Vestuário','bijuteria':'Vestuário',
+  // Assinaturas
+  'netflix':'Assinaturas','spotify':'Assinaturas','amazon':'Assinaturas',
+  'prime':'Assinaturas','disney':'Assinaturas','youtube':'Assinaturas',
+  'hbo':'Assinaturas','paramount':'Assinaturas','globoplay':'Assinaturas',
+  'icloud':'Assinaturas','google-drive':'Assinaturas','dropbox':'Assinaturas',
+  'office':'Assinaturas','adobe':'Assinaturas','antivirus':'Assinaturas',
+  // Pet
+  'veterinario':'Pet','veterinário':'Pet','petshop':'Pet','pet-shop':'Pet',
+  'racao':'Pet','ração':'Pet','vacina-pet':'Pet','banho-pet':'Pet',
+  'tosa':'Pet','remedio-pet':'Pet',
+  // Investimento
+  'investimento':'Investimento','acao':'Investimento','ação':'Investimento',
+  'fii':'Investimento','tesouro':'Investimento','cdb':'Investimento',
+  'poupanca':'Investimento','poupança':'Investimento','aporte':'Investimento',
+};
 const MESES = {
   'janeiro':1,'fevereiro':2,'março':3,'abril':4,'maio':5,'junho':6,
   'julho':7,'agosto':8,'setembro':9,'outubro':10,'novembro':11,'dezembro':12
@@ -346,7 +421,14 @@ function parsearLancamento(text, tipo, username) {
   const descricao = capitalizar(tokens.filter((_,i) => !usados.has(i)).join(' ') || 'Sem descrição');
 
   if (!dataGasto) dataGasto = new Date().toLocaleDateString('pt-BR', { timeZone:'America/Sao_Paulo' });
-  if (!categoria) categoria = tipo === 'Saída' ? 'Outros' : 'Outras entradas';
+
+  // Se categoria não foi informada, tenta inferir pela descrição
+  if (!categoria) {
+    const descLower = descricao.toLowerCase();
+    const catInferida = MAPA_DESC_CATEGORIA[descLower] ||
+      Object.entries(MAPA_DESC_CATEGORIA).find(([k]) => descLower.includes(k))?.[1];
+    categoria = catInferida || (tipo === 'Saída' ? 'Outros' : 'Outras entradas');
+  }
   if (!formaPgto && tipo === 'Saída') formaPgto = 'Pix'; // padrão para saídas sem forma informada
 
   return { valor, descricao, categoria, formaPgto, parcelas, dataGasto, observacao, conta };
