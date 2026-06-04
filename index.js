@@ -145,7 +145,7 @@ async function handleUpdate(update) {
   if (message.photo && message.photo.length > 0) { await handleSemIA(chatId, message.caption||'', username); return; }
   if (pendentes[chatId]) { await handleConfirmacao(chatId, tl); return; }
 
-  if (tl.startsWith('/gasto')      || tl.startsWith('gasto'))      { await handleLancamento(chatId, text, username, 'Saída');   return; }
+  if (tl.startsWith('/gasto')      || tl.startsWith('gasto')      || tl.startsWith('saida') || tl.startsWith('saída')) { await handleLancamento(chatId, text, username, 'Saída'); return; }
   if (tl.startsWith('/entrada')    || tl.startsWith('entrada'))    { await handleLancamento(chatId, text, username, 'Entrada'); return; }
   if (tl.startsWith('/apagar')     || tl.startsWith('apagar')     || tl.startsWith('a pagar')) { await handleApagar(chatId, text, username); return; }
   if (tl.startsWith('/editar')     || tl.startsWith('editar'))     { await handleEditar(chatId, text, username);                return; }
@@ -347,6 +347,7 @@ function parsearLancamento(text, tipo, username) {
 
   if (!dataGasto) dataGasto = new Date().toLocaleDateString('pt-BR', { timeZone:'America/Sao_Paulo' });
   if (!categoria) categoria = tipo === 'Saída' ? 'Outros' : 'Outras entradas';
+  if (!formaPgto && tipo === 'Saída') formaPgto = 'Pix'; // padrão para saídas sem forma informada
 
   return { valor, descricao, categoria, formaPgto, parcelas, dataGasto, observacao, conta };
 }
