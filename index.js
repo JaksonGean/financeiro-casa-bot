@@ -46,7 +46,9 @@ const MAPA_DESC_CATEGORIA = {
   'fogão':'Casa','microondas':'Casa','maquina':'Casa','máquina':'Casa',
   // Transporte
   'gasolina':'Transporte','combustivel':'Transporte','combustível':'Transporte',
+  'gasolina':'Transporte','abastecimento':'Transporte','abastecer':'Transporte',
   'etanol':'Transporte','alcool':'Transporte','álcool':'Transporte',
+  'combustivel gasolina':'Transporte','saida combustivel':'Transporte',
   'uber':'Transporte','99':'Transporte','taxi':'Transporte','táxi':'Transporte',
   'onibus':'Transporte','ônibus':'Transporte','metro':'Transporte','metrô':'Transporte',
   'pedagio':'Transporte','pedágio':'Transporte','estacionamento':'Transporte',
