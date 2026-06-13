@@ -784,6 +784,11 @@ async function salvarLancamento(chatId, d) {
       `👤 ${d.username} | 📌 Linha #${linha}\n`;
 
     if (d.tipo==='Saída') {
+      // Varredura automática de A Pagar com mesmo valor e descrição
+      const baixa = await verificarEQuitarAPagar(d.valor, d.descricao);
+      if (baixa.encontrado) {
+        msg += `\n✅ *Baixa automática!* Conta a pagar "${baixa.descricao}" (venc. ${baixa.vencimento}) marcada como quitada.`;
+      }
       const msgMeta = await getMensagemMeta(d.categoria, d.mesAno);
       if (msgMeta) msg += `\n${msgMeta}`;
     }
@@ -1015,6 +1020,76 @@ function parsearDataCompleta(str) {
     toISOString: () => `${ano}-${mes}-${dia}T12:00:00.000Z`,
     toLocaleDateString: () => `${dia}/${mes}/${ano}`
   };
+}
+
+async function verificarEQuitarAPagar(valor, descricao) {
+  // Varre lançamentos A Pagar do mês atual e anterior
+  // Se encontrar valor e descrição compatíveis, marca como Quitado na observação
+  try {
+    const rows   = await getSheetRows();
+    const hoje   = new Date();
+    const mesAtual  = `${String(hoje.getMonth()+1).padStart(2,'0')}/${hoje.getFullYear()}`;
+    const mesAnterior = (() => {
+      const d = new Date(hoje);
+      d.setMonth(d.getMonth()-1);
+      return `${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+    })();
+
+    const descLower = descricao.toLowerCase();
+    // Pega a primeira palavra significativa da descrição para busca flexível
+    const palavraChave = descLower.split(' ').find(p => p.length > 2) || descLower;
+
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row[0]) continue;
+      if ((row[5]||'').trim() !== 'A Pagar') continue;
+
+      const mesRow   = (row[9]||'').trim();
+      if (mesRow !== mesAtual && mesRow !== mesAnterior) continue;
+
+      const valorRow = parseFloat((row[2]||'0').toString().replace(',','.')) || 0;
+      const descRow  = (row[1]||'').toLowerCase();
+
+      if (Math.abs(valorRow - valor) < 0.01 && descRow.includes(palavraChave)) {
+        // Encontrou! Marca como Quitado na observação
+        const dataHoje     = new Date().toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});
+        const registradoEm = new Date().toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'});
+        const obsAtual     = (row[8]||'').trim();
+        const obsFinal     = `✅ Quitado em ${dataHoje}${obsAtual ? ' | '+obsAtual : ''}`;
+
+        // Mantém todos os dados originais, só muda observação para "Quitado"
+        await editarLinha(
+          i + 1,
+          row[0],  // data vencimento original
+          row[1],  // descrição original
+          valorRow,
+          row[3] || 'Casa',
+          row[4] || '',
+          'A Pagar', // mantém como A Pagar — dashboard filtra pelo Quitado
+          row[6] || '',
+          row[7] || '',
+          obsFinal,  // marca como quitado aqui
+          row[9] || '',
+          registradoEm,
+          row[11] || ''
+        );
+
+        // Atualiza Calendar se tiver eventId
+        const eventId = row[12] ? row[12].trim() : null;
+        if (eventId) {
+          try {
+            await atualizarEventoCalendar(eventId, row[1], valorRow, dataHoje, row[0]);
+          } catch(e) {}
+        }
+
+        return { encontrado: true, linha: i+1, descricao: row[1], vencimento: row[0] };
+      }
+    }
+    return { encontrado: false };
+  } catch(err) {
+    console.error('Erro varredura A Pagar:', err);
+    return { encontrado: false };
+  }
 }
 
 async function verificarDuplicata(valor, descricao) {
