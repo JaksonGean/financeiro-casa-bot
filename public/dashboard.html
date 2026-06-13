@@ -218,6 +218,7 @@ function parseCSV(csv) {
       tipo:c[5]?.replace(/"/g,'').trim()||'Saída', forma:c[6]?.replace(/"/g,'').trim()||'',
       parcelas:c[7]?.replace(/"/g,'').trim()||'', obs:c[8]?.replace(/"/g,'').trim()||'',
       mesAno:c[9]?.replace(/"/g,'').trim()||'', conta:c[11]?.replace(/"/g,'').trim()||'',
+      quitado:(c[8]?.replace(/"/g,'').trim()||'').toLowerCase().startsWith('✅ quitado'),
     });
   }
   return dados;
@@ -281,7 +282,7 @@ function renderDashboard() {
   const dados=filtrarDados(); destroyCharts();
   const entradas=dados.filter(d=>d.tipo==='Entrada');
   const saidas=dados.filter(d=>d.tipo==='Saída');
-  const aPagar=dados.filter(d=>d.tipo==='A Pagar');
+  const aPagar=dados.filter(d=>d.tipo==='A Pagar' && !d.quitado);
   const totEnt=entradas.reduce((s,d)=>s+d.valor,0);
   const totSai=saidas.reduce((s,d)=>s+d.valor,0);
   const totPag=aPagar.reduce((s,d)=>s+d.valor,0);
