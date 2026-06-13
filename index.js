@@ -299,43 +299,49 @@ Ex: pago 1350 aluguel'); return; }
       return;
     }
 
-    // Atualiza o tipo para Saída e a data para hoje
-    const dataHoje     = new Date().toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});
-    const registradoEm = new Date().toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'});
-    const mesAno       = calcularMesAno(dataHoje);
-    const conta        = rowEncontrada[11] || '';
-
-    // Detecta conta pelo usuário se não tiver conta salva
-    const contaFinal = conta || (username.toLowerCase().includes('dany') ? 'C6 Dany' : 'C6 Jakson');
+    const dataHoje      = new Date().toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});
+    const registradoEm  = new Date().toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'});
+    // Mantém a data de vencimento original na coluna A e o mesAno original
+    const dataVencOrig  = rowEncontrada[0] || dataHoje;
+    const mesAnoOrig    = rowEncontrada[9] || calcularMesAno(dataVencOrig);
+    const conta         = rowEncontrada[11] || '';
+    const contaFinal    = conta || (username.toLowerCase().includes('dany') ? 'C6 Dany' : 'C6 Jakson');
+    // Observação registra data do pagamento efetivo
+    const obsOriginal   = rowEncontrada[8] || '';
+    const obsFinal      = `Pago em ${dataHoje}${obsOriginal ? ' | '+obsOriginal : ''}`;
 
     await editarLinha(
       linhaEncontrada,
-      dataHoje,
+      dataVencOrig,            // mantém data de vencimento original
       rowEncontrada[1] || '',  // mantém descrição original
       valor,
-      rowEncontrada[3] || 'Casa', // mantém categoria original
+      rowEncontrada[3] || 'Casa',
       username,
       'Saída',                 // muda de A Pagar para Saída
       rowEncontrada[6] || '',
       rowEncontrada[7] || '',
-      rowEncontrada[8] || '',
-      mesAno,
+      obsFinal,                // registra quando foi pago de fato
+      mesAnoOrig,              // mantém mês/ano original
       registradoEm,
       contaFinal
     );
 
-    // Verifica se tinha evento no Calendar para remover
+    // Atualiza evento no Calendar em vez de excluir
     const eventId = rowEncontrada[12] ? rowEncontrada[12].trim() : null;
     let calMsg = '';
     if (eventId) {
-      await excluirEventoCalendar(eventId);
-      calMsg = '\n📅 Lembrete do Calendar removido!';
+      try {
+        await atualizarEventoCalendar(eventId, rowEncontrada[1], valor, dataHoje, dataVencOrig);
+        calMsg = '\n📅 Calendar atualizado com confirmação de pagamento!';
+      } catch(e) {
+        calMsg = '\n⚠️ Não foi possível atualizar o Calendar.';
+      }
     }
 
     await sendMessage(chatId,
       `✅ *Baixa realizada!*\n\n` +
       `📝 ${rowEncontrada[1]} — R$ ${fmt(valor)}\n` +
-      `📅 Pago em: ${dataHoje}\n` +
+      `📅 Vencimento: ${dataVencOrig} | Pago em: ${dataHoje}\n` +
       `🏦 Conta: ${contaFinal}\n` +
       `📌 Linha #${linhaEncontrada}${calMsg}`
     );
@@ -1112,6 +1118,19 @@ async function excluirEventoCalendar(eventId) {
     const calendar = google.calendar({version:'v3',auth});
     await calendar.events.delete({ calendarId: CALENDAR_ID, eventId });
   } catch(e) { console.error('Erro ao excluir evento Calendar:', e.message); }
+}
+
+async function atualizarEventoCalendar(eventId, descricao, valor, dataPagamento, dataVencimento) {
+  const auth = new google.auth.GoogleAuth({ credentials:GOOGLE_CREDENTIALS, scopes:['https://www.googleapis.com/auth/calendar'] });
+  const calendar = google.calendar({version:'v3',auth});
+  await calendar.events.patch({
+    calendarId: CALENDAR_ID,
+    eventId,
+    resource: {
+      summary: `✅ Pago: ${descricao} - R$ ${valor.toFixed(2)}`,
+      description: `Conta paga em ${dataPagamento}\nVencimento original: ${dataVencimento}\nValor: R$ ${valor.toFixed(2)}`,
+    }
+  });
 }
 
 // ============================================================
