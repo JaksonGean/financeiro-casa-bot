@@ -235,9 +235,115 @@ async function handleUpdate(update) {
   if (tl.startsWith('/contas')     || tl.startsWith('contas'))     { await handleContas(chatId);                              return; }
   if (tl.startsWith('/transferencia') || tl.startsWith('transferencia') ||
       tl.startsWith('transf'))                                           { await handleTransferencia(chatId, text, username);        return; }
+  if (tl.startsWith('/pago')         || tl.startsWith('pago'))          { await handlePago(chatId, text, username);                 return; }
   if (tl.startsWith('/menu')       || tl.startsWith('menu')    ||
       tl.startsWith('/ajuda')      || tl.startsWith('ajuda')   ||
       tl === '/start')                                              { await handleMenu(chatId);                                return; }
+}
+
+// ============================================================
+//  HANDLER — baixa de conta a pagar
+// ============================================================
+async function handlePago(chatId, text, username) {
+  const semCmd = text.replace(/^\/?pago\s*/i,'').trim();
+  const partes = semCmd.split(/\s+/);
+
+  if (partes.length < 2) {
+    await sendMessage(chatId,
+      '✅ *Como dar baixa em conta a pagar:*\n\n' +
+      'pago [valor] [descrição]\n\n' +
+      '*Exemplos:*\n' +
+      '• pago 1350 aluguel\n' +
+      '• pago 89,90 netflix\n\n' +
+      '_O bot busca o lançamento A Pagar e dá baixa automaticamente._'
+    );
+    return;
+  }
+
+  const valor = parseFloat(partes[0].replace(',','.'));
+  if (isNaN(valor)) { await sendMessage(chatId,'⚠️ Valor inválido.
+Ex: pago 1350 aluguel'); return; }
+
+  const descBusca = partes.slice(1).join(' ').toLowerCase();
+
+  try {
+    const rows = await getSheetRows();
+    let linhaEncontrada = null, rowEncontrada = null;
+
+    // Busca lançamento A Pagar com valor e descrição correspondentes
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row[0]) continue;
+      if ((row[5]||'').trim() !== 'A Pagar') continue;
+      const valorRow = parseFloat((row[2]||'0').toString().replace(',','.')) || 0;
+      const descRow  = (row[1]||'').toLowerCase();
+      // Aceita se valor bate E descrição contém a palavra buscada
+      if (Math.abs(valorRow - valor) < 0.01 && descRow.includes(descBusca.split(' ')[0])) {
+        linhaEncontrada = i + 1; // +1 porque sheet é 1-based
+        rowEncontrada = row;
+        break;
+      }
+    }
+
+    if (!linhaEncontrada) {
+      await sendMessage(chatId,
+        `⚠️ Não encontrei nenhum lançamento *A Pagar* com:
+` +
+        `💵 Valor: R$ ${fmt(valor)}
+` +
+        `📝 Descrição contendo: "${descBusca}"
+
+` +
+        `Use *ultimos* para ver os lançamentos pendentes.`
+      );
+      return;
+    }
+
+    // Atualiza o tipo para Saída e a data para hoje
+    const dataHoje     = new Date().toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});
+    const registradoEm = new Date().toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'});
+    const mesAno       = calcularMesAno(dataHoje);
+    const conta        = rowEncontrada[11] || '';
+
+    // Detecta conta pelo usuário se não tiver conta salva
+    const contaFinal = conta || (username.toLowerCase().includes('dany') ? 'C6 Dany' : 'C6 Jakson');
+
+    await editarLinha(
+      linhaEncontrada,
+      dataHoje,
+      rowEncontrada[1] || '',  // mantém descrição original
+      valor,
+      rowEncontrada[3] || 'Casa', // mantém categoria original
+      username,
+      'Saída',                 // muda de A Pagar para Saída
+      rowEncontrada[6] || '',
+      rowEncontrada[7] || '',
+      rowEncontrada[8] || '',
+      mesAno,
+      registradoEm,
+      contaFinal
+    );
+
+    // Verifica se tinha evento no Calendar para remover
+    const eventId = rowEncontrada[12] ? rowEncontrada[12].trim() : null;
+    let calMsg = '';
+    if (eventId) {
+      await excluirEventoCalendar(eventId);
+      calMsg = '\n📅 Lembrete do Calendar removido!';
+    }
+
+    await sendMessage(chatId,
+      `✅ *Baixa realizada!*\n\n` +
+      `📝 ${rowEncontrada[1]} — R$ ${fmt(valor)}\n` +
+      `📅 Pago em: ${dataHoje}\n` +
+      `🏦 Conta: ${contaFinal}\n` +
+      `📌 Linha #${linhaEncontrada}${calMsg}`
+    );
+
+  } catch(err) {
+    console.error('Erro handlePago:', err);
+    await sendMessage(chatId,'❌ Erro ao dar baixa. Tente novamente.');
+  }
 }
 
 // ============================================================
@@ -684,12 +790,40 @@ async function salvarLancamento(chatId, d) {
 //  HANDLER — contas a pagar
 // ============================================================
 async function handleApagar(chatId, text, username) {
-  const semCmd = text.replace(/^\/?a\s?pagar\s*/i,'').trim().split(' ');
-  if (semCmd.length < 3) { await sendMessage(chatId,'⚠️ Use: apagar 150,00 descrição dd/mm'); return; }
-  const valor   = parseFloat(semCmd[0].replace(',','.'));
-  const desc    = capitalizar(semCmd[1]);
-  const vencStr = semCmd[2];
-  if (isNaN(valor)) { await sendMessage(chatId,'⚠️ Valor inválido.'); return; }
+  const semCmd = text.replace(/^\/?a?\s?pagar\s*/i,'').trim();
+  const tokens = semCmd.split(/\s+/);
+
+  if (tokens.length < 2) {
+    await sendMessage(chatId,
+      '⚠️ Use: a pagar [valor] [descrição] [dd/mm]\n' +
+      'Ex: a pagar 1356,32 cartão neon 22/06\n' +
+      '_Valor e data podem vir em qualquer posição!_'
+    );
+    return;
+  }
+
+  // Extrai valor — primeiro token numérico
+  let valor = null, vencStr = null;
+  const usados = new Set();
+
+  for (let i = 0; i < tokens.length; i++) {
+    const n = parseFloat(tokens[i].replace(',','.'));
+    if (!isNaN(n) && tokens[i].match(/[\d,\.]+/)) { valor = n; usados.add(i); break; }
+  }
+
+  // Extrai data — token no formato dd/mm ou dd/mm/yyyy
+  for (let i = 0; i < tokens.length; i++) {
+    if (usados.has(i)) continue;
+    if (/^\d{1,2}\/\d{1,2}(\/\d{2,4})?$/.test(tokens[i])) {
+      vencStr = tokens[i]; usados.add(i); break;
+    }
+  }
+
+  // O que sobrou é a descrição
+  const desc = capitalizar(tokens.filter((_,i) => !usados.has(i)).join(' ') || 'Sem descrição');
+
+  if (!valor || isNaN(valor)) { await sendMessage(chatId,'⚠️ Valor não encontrado.\nEx: a pagar 1356,32 cartão neon 22/06'); return; }
+  if (!vencStr) { await sendMessage(chatId,'⚠️ Data não encontrada. Use dd/mm.\nEx: a pagar 1356,32 cartão neon 22/06'); return; }
   const dataVenc = parsearDataCompleta(vencStr);
   if (!dataVenc) { await sendMessage(chatId,'⚠️ Data inválida. Use dd/mm. Ex: 15/06'); return; }
 
