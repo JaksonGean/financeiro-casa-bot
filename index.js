@@ -1,6 +1,3 @@
-bash
-
-cat > /home/claude/index.js << 'ENDOFFILE'
 const express = require('express');
 const fetch = require('node-fetch');
 const { google } = require('googleapis');
@@ -816,6 +813,3 @@ async function sendMessageWithButtons(chatId, text, buttons) {
 
 const PORT = process.env.PORT||3000;
 app.listen(PORT, () => console.log('Bot rodando na porta ' + PORT));
-ENDOFFILE
-echo "OK - $(wc -l < /home/claude/index.js) linhas"
-Saída
