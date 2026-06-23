@@ -23,6 +23,10 @@ const CATEGORIAS_ENTRADA = [
 ];
 const FORMAS_PAGAMENTO = ['pix','debito','crédito','credito','dinheiro','ted','doc'];
 
+const CATEGORIAS_LOJA = [
+  'Shopify','Tráfego pago','Apps pagos','Taxas','Curso','Outros loja'
+];
+
 const MAPA_DESC_CATEGORIA = {
   'mercado':'Alimentação','supermercado':'Alimentação','feira':'Alimentação',
   'fruteira':'Alimentação','padaria':'Alimentação','açougue':'Alimentação',
@@ -179,7 +183,10 @@ async function handleUpdate(update) {
   if (tl.startsWith('/resumo') || tl.startsWith('resumo') || tl.startsWith('/saldo') || tl.startsWith('saldo')) { await handleResumo(chatId); return; }
   if (tl.startsWith('/ultimos') || tl.startsWith('ultimos')) { await handleUltimos(chatId); return; }
   if (tl.startsWith('/categorias') || tl.startsWith('categorias')) { await handleCategorias(chatId); return; }
-  if (tl.startsWith('/metas') || tl.startsWith('metas')) { await handleMetas(chatId); return; }
+  if (tl.startsWith('/metas') || tl.startsWith('metas')) {
+    if (tl.includes('loja')) { await handleMetasLoja(chatId); return; }
+    await handleMetas(chatId); return;
+  }
   if (tl.startsWith('/contas') || tl.startsWith('contas')) { await handleContas(chatId); return; }
   if (tl.startsWith('/transferencia') || tl.startsWith('transferencia') || tl.startsWith('transf')) { await handleTransferencia(chatId, text, username); return; }
   if (tl.startsWith('/pago') || tl.startsWith('pago')) { await handlePago(chatId, text, username); return; }
@@ -480,6 +487,8 @@ async function handleContas(chatId) {
 }
 
 async function handleLancamento(chatId, text, username, tipo) {
+  // Redireciona para aba Loja se contiver a palavra "loja"
+  if (isLancamentoLoja(text)) { await handleLancamentoLoja(chatId, text, username, tipo); return; }
   const p = parsearLancamento(text, tipo, username);
   if (!p.valor || isNaN(p.valor)) {
     const cmd = tipo==='Saída'?'gasto':'entrada';
@@ -587,7 +596,17 @@ async function handleEditar(chatId, text, username) {
 }
 
 async function handleExcluir(chatId, text) {
-  const linhaNum = parseInt(text.replace(/^\/?excluir\s*/i,'').trim());
+  const semCmd = text.replace(/^\/?excluir\s*/i,'').trim();
+  // Excluir da aba Loja
+  if (semCmd.toLowerCase().startsWith('loja')) {
+    const linhaNum = parseInt(semCmd.replace(/^loja\s*/i,'').trim());
+    if (isNaN(linhaNum)) { await sendMessage(chatId,'⚠️ Use: excluir loja 5'); return; }
+    const { sheets } = await getSheetsClient();
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, resource: { requests:[{ deleteDimension:{ range:{ sheetId: null, dimension:'ROWS', startIndex:linhaNum-1, endIndex:linhaNum } } }] } });
+    await sendMessage(chatId, 'Linha #' + linhaNum + ' excluída da Loja!');
+    return;
+  }
+  const linhaNum = parseInt(semCmd);
   if (isNaN(linhaNum)) { await sendMessage(chatId,'⚠️ Use: excluir 5'); return; }
   let calMsg = '';
   try {
@@ -641,6 +660,166 @@ async function handleResumo(chatId) {
 
 async function handleCategorias(chatId) {
   await sendMessage(chatId, '🏷️ *Categorias disponíveis*\n\n*💸 Saídas:*\n' + CATEGORIAS_SAIDA.map(c=>'• '+c).join('\n') + '\n\n*💰 Entradas:*\n' + CATEGORIAS_ENTRADA.map(c=>'• '+c).join('\n'));
+}
+
+// ============================================================
+//  LOJA — detectar se lançamento é da loja
+// ============================================================
+function isLancamentoLoja(text) {
+  return /loja/i.test(text);
+}
+
+function parsearLancamentoLoja(text, tipo, username) {
+  // Remove a palavra "loja" e o comando do texto
+  const raw = text.replace(/^\/?(?:gasto|entrada|saida|saída)\s*/i,'').replace(/loja/gi,'').trim();
+  const tokens = raw.split(/\s+/).filter(t => t.length > 0);
+  let valor = null, categoria = null, formaPgto = '', dataGasto = null;
+  const usados = new Set();
+
+  // Valor
+  for (let i = 0; i < tokens.length; i++) {
+    const n = parseFloat(tokens[i].replace(',','.'));
+    if (!isNaN(n) && tokens[i].match(/[\d,\.]+/)) { valor = n; usados.add(i); break; }
+  }
+  // Forma de pagamento
+  for (let i = 0; i < tokens.length; i++) {
+    if (usados.has(i)) continue;
+    if (FORMAS_PAGAMENTO.includes(tokens[i].toLowerCase())) { formaPgto = capitalizar(tokens[i]); usados.add(i); break; }
+  }
+  // Data
+  for (let i = 0; i < tokens.length; i++) {
+    if (usados.has(i)) continue;
+    const d = parsearData(tokens[i], tokens[i+1]);
+    if (d) { dataGasto = d.data; usados.add(i); if (d.consumiu2) usados.add(i+1); }
+  }
+  // Categoria da loja
+  for (let i = 0; i < tokens.length; i++) {
+    if (usados.has(i)) continue;
+    const t = tokens[i].toLowerCase();
+    const cat = CATEGORIAS_LOJA.find(c => c.toLowerCase().startsWith(t) || t.startsWith(c.toLowerCase().split(' ')[0]));
+    if (cat) { categoria = cat; usados.add(i); break; }
+  }
+  const conta = detectarConta(tokens, usados, formaPgto, username);
+  const descricao = capitalizar(tokens.filter((_,i) => !usados.has(i)).join(' ') || 'Sem descrição');
+  if (!dataGasto) dataGasto = new Date().toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});
+  if (!categoria) categoria = tipo === 'Saída' ? 'Outros loja' : 'Outras entradas';
+  if (!formaPgto && tipo === 'Saída') formaPgto = 'Pix';
+  return { valor, descricao, categoria, formaPgto, dataGasto, conta };
+}
+
+async function handleLancamentoLoja(chatId, text, username, tipo) {
+  const p = parsearLancamentoLoja(text, tipo, username);
+  if (!p.valor || isNaN(p.valor)) {
+    await sendMessage(chatId, '⚠️ Não encontrei o valor.\nEx: gasto 150 embalagens loja');
+    return;
+  }
+  const registradoEm = new Date().toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'});
+  const mesAno = calcularMesAno(p.dataGasto);
+  const linha = await appendToSheetLoja(p.dataGasto, p.descricao, p.valor, p.categoria, username, tipo, p.formaPgto, '', '', mesAno, registradoEm, p.conta);
+  const emoji = tipo === 'Saída' ? '💸' : '💰';
+  let msg = emoji + ' *[LOJA] Lançado!* ' + p.descricao + ' — R$ ' + fmt(p.valor) + '\n📅 ' + p.dataGasto + ' | 🏷️ ' + p.categoria + '\n💳 ' + (p.formaPgto||'Não informada') + ' | 🏦 ' + p.conta + '\n👤 ' + username + ' | 📌 Linha #' + linha;
+  const msgMeta = await getMensagemMetaLoja(p.categoria, mesAno);
+  if (msgMeta) msg += '\n' + msgMeta;
+  msg += '\n\n_excluir loja ' + linha + '_';
+  await sendMessage(chatId, msg);
+}
+
+async function handleResumoLoja(chatId) {
+  try {
+    const rows = await getSheetRowsLoja();
+    const mes  = mesAnoAtual();
+    let totEnt = 0, totSai = 0;
+    const porCat = {};
+    for (const row of rows.slice(1)) {
+      if (!row[0] || row[9] !== mes) continue;
+      const valor = parseFloat(row[2])||0, tipo = row[5]||'Saída', cat = row[3]||'Outros loja';
+      if (tipo === 'Entrada') totEnt += valor;
+      else { totSai += valor; porCat[cat] = (porCat[cat]||0) + valor; }
+    }
+    const nomeMes = new Date().toLocaleDateString('pt-BR',{month:'long',year:'numeric',timeZone:'America/Sao_Paulo'});
+    let msg = '🏪 *Resumo Loja — ' + nomeMes + '*\n\n💰 Entradas: R$ ' + fmt(totEnt) + '\n💸 Saídas: R$ ' + fmt(totSai) + '\n📈 *Saldo: R$ ' + fmt(totEnt-totSai) + '*\n';
+    if (Object.keys(porCat).length) {
+      msg += '\n*Por categoria:*\n';
+      Object.entries(porCat).sort((a,b)=>b[1]-a[1]).forEach(([c,v]) => msg += '🏷️ ' + c + ': R$ ' + fmt(v) + '\n');
+    }
+    await sendMessage(chatId, msg);
+  } catch(e) { await sendMessage(chatId,'❌ Erro ao buscar resumo da loja.'); }
+}
+
+async function handleMetasLoja(chatId) {
+  try {
+    const mes   = mesAnoAtual();
+    const metas = await getMetasLoja(mes);
+    if (Object.keys(metas).length === 0) { await sendMessage(chatId, '📋 Nenhuma meta cadastrada na aba *MetasLoja* da planilha.'); return; }
+    const rows = await getSheetRowsLoja();
+    const gastos = {};
+    for (const row of rows.slice(1)) {
+      if (!row[0] || row[9] !== mes) continue;
+      const cat = (row[3]||'').trim();
+      if (row[5] !== 'Entrada') gastos[cat] = (gastos[cat]||0) + (parseFloat(row[2])||0);
+    }
+    const nomeMes = new Date().toLocaleDateString('pt-BR',{month:'long',year:'numeric',timeZone:'America/Sao_Paulo'});
+    let msg = '🎯 *Metas Loja — ' + nomeMes + '*\n\n';
+    for (const [cat, { meta }] of Object.entries(metas)) {
+      const gasto = gastos[cat]||0, restante = meta - gasto;
+      const pct   = Math.min(100,(gasto/meta*100)).toFixed(0);
+      const barra = '█'.repeat(Math.round(Math.min(1,gasto/meta)*8)) + '░'.repeat(8-Math.round(Math.min(1,gasto/meta)*8));
+      const emoji = restante<0?'🔴':restante<meta*0.2?'🟡':'🟢';
+      msg += emoji + ' *' + cat + '*\n' + barra + ' ' + pct + '%\n';
+      msg += 'R$ ' + fmt(gasto) + ' de R$ ' + fmt(meta) + (restante<0?' ⚠️ Passou R$ '+fmt(Math.abs(restante)):' — saldo R$ '+fmt(restante)) + '\n\n';
+    }
+    msg += '_Edite as metas na aba MetasLoja da planilha_';
+    await sendMessage(chatId, msg);
+  } catch(e) { await sendMessage(chatId,'❌ Erro ao buscar metas da loja.'); }
+}
+
+async function getMensagemMetaLoja(categoria, mesAno) {
+  const metas = await getMetasLoja(mesAno);
+  if (!metas[categoria]) return null;
+  const { meta } = metas[categoria];
+  const rows = await getSheetRowsLoja();
+  const mes = mesAno || mesAnoAtual();
+  let gasto = 0;
+  for (const row of rows.slice(1)) {
+    if (!row[0] || row[9] !== mes) continue;
+    if ((row[3]||'').trim() === categoria && row[5] !== 'Entrada') gasto += parseFloat(row[2])||0;
+  }
+  const restante = meta - gasto;
+  if (restante < 0) return '⚠️ *Meta de ' + categoria + ' ultrapassada!* R$ ' + fmt(gasto) + ' de R$ ' + fmt(meta);
+  return '🎯 *' + categoria + ':* R$ ' + fmt(gasto) + ' de R$ ' + fmt(meta) + ' — saldo R$ ' + fmt(restante);
+}
+
+async function getMetasLoja(mesAno) {
+  try {
+    const { sheets } = await getSheetsClient();
+    const res = await sheets.spreadsheets.values.get({ spreadsheetId:SHEET_ID, range:'MetasLoja!A:D' });
+    const rows = res.data.values || [];
+    const mes = mesAno || mesAnoAtual();
+    const metas = {};
+    for (const row of rows.slice(1)) {
+      const cat = (row[0]||'').trim(), val = parseFloat((row[1]||'0').toString().replace(',','.')) || 0;
+      const rm  = (row[3]||'').trim();
+      if (!cat || !val) continue;
+      if (rm === mes || rm === '') metas[cat] = { meta:val, tipo:'Gasto' };
+    }
+    return metas;
+  } catch(e) { return {}; }
+}
+
+async function appendToSheetLoja(dataGasto, descricao, valor, categoria, quemPagou, tipo, formaPgto, parcelas, observacao, mesAno, registradoEm, conta) {
+  const { sheets } = await getSheetsClient();
+  const res = await sheets.spreadsheets.values.append({
+    spreadsheetId: SHEET_ID, range: 'Loja!A:M', valueInputOption:'USER_ENTERED',
+    resource: { values: [[dataGasto, descricao, valor, categoria, quemPagou, tipo, formaPgto, parcelas, observacao, mesAno, registradoEm, conta||'', '']] }
+  });
+  const match = res.data.updates.updatedRange.match(/(\d+)$/);
+  return match ? parseInt(match[1]) : '?';
+}
+
+async function getSheetRowsLoja() {
+  const { sheets } = await getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId:SHEET_ID, range:'Loja!A:M' });
+  return res.data.values||[];
 }
 
 async function handleSemIA(chatId, caption, username) {
